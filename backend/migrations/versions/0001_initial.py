@@ -1,8 +1,6 @@
 """
 Alembic initial migration — creates all MAF tables.
-
-Generated from ORM models in app/models/logs.py.
-Run: alembic upgrade head
+Restored version with idempotency fixes for Postgres Enums.
 """
 
 from alembic import op
@@ -16,36 +14,35 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # ── Enums ─────────────────────────────────────────────────────────────
-    job_status = postgresql.ENUM(
-        "pending", "running", "done", "error", "cancelled",
-        name="jobstatus", create_type=True
-    )
-    operation_type = postgresql.ENUM(
-        "migration_partitioned", "migration_fast", "migration_dblink",
-        "migration_simple", "validation", "gap_analysis", "datastage_doc",
-        "lineage_build", "metadata_extract", "table_create", "merge_run", "copy_s3",
-        name="operationtype", create_type=True
-    )
-    log_level = postgresql.ENUM(
-        "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL",
-        name="loglevel", create_type=True
-    )
-    job_status.create(op.get_bind(), checkfirst=True)
-    operation_type.create(op.get_bind(), checkfirst=True)
-    log_level.create(op.get_bind(), checkfirst=True)
+    # ── Enums (Criação Segura) ─────────────────────────────────────────────
+    # Usamos blocos anônimos PL/pgSQL para evitar o erro DuplicateObject
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'jobstatus') THEN 
+                CREATE TYPE jobstatus AS ENUM ('pending', 'running', 'done', 'error', 'cancelled');
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'operationtype') THEN 
+                CREATE TYPE operationtype AS ENUM (
+                    'migration_partitioned', 'migration_fast', 'migration_dblink',
+                    'migration_simple', 'validation', 'gap_analysis', 'datastage_doc',
+                    'lineage_build', 'metadata_extract', 'table_create', 'merge_run', 'copy_s3'
+                );
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'loglevel') THEN 
+                CREATE TYPE loglevel AS ENUM ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL');
+            END IF;
+        END $$;
+    """)
 
     # ── migration_jobs ─────────────────────────────────────────────────
     op.create_table(
         "migration_jobs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("table_name", sa.String(128), nullable=False),
-        sa.Column("operation", sa.Enum("migration_partitioned", "migration_fast",
-                  "migration_dblink", "migration_simple", "validation", "gap_analysis",
-                  "datastage_doc", "lineage_build", "metadata_extract", "table_create",
-                  "merge_run", "copy_s3", name="operationtype"), nullable=False),
-        sa.Column("status", sa.Enum("pending", "running", "done", "error", "cancelled",
-                  name="jobstatus"), nullable=False, server_default="pending"),
+        sa.Column("operation", postgresql.ENUM(name="operationtype", create_type=False), nullable=False),
+        sa.Column("status", postgresql.ENUM(name="jobstatus", create_type=False), 
+                  nullable=False, server_default="pending"),
         sa.Column("total_partitions", sa.Integer),
         sa.Column("done_partitions", sa.Integer, nullable=False, server_default="0"),
         sa.Column("failed_partitions", sa.Integer, nullable=False, server_default="0"),
@@ -74,8 +71,8 @@ def upgrade() -> None:
                   sa.ForeignKey("migration_jobs.id", ondelete="SET NULL"), nullable=True),
         sa.Column("table_name", sa.String(128)),
         sa.Column("operation", sa.String(64)),
-        sa.Column("level", sa.Enum("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL",
-                  name="loglevel"), nullable=False, server_default="INFO"),
+        sa.Column("level", postgresql.ENUM(name="loglevel", create_type=False), 
+                  nullable=False, server_default="INFO"),
         sa.Column("message", sa.Text, nullable=False),
         sa.Column("extra", postgresql.JSONB),
         sa.Column("created_at", sa.DateTime(timezone=True),
@@ -93,8 +90,8 @@ def upgrade() -> None:
         sa.Column("job_id", postgresql.UUID(as_uuid=True),
                   sa.ForeignKey("migration_jobs.id", ondelete="CASCADE"), nullable=False),
         sa.Column("partition_key", sa.String(64), nullable=False),
-        sa.Column("status", sa.Enum("pending", "running", "done", "error", "cancelled",
-                  name="jobstatus"), nullable=False, server_default="pending"),
+        sa.Column("status", postgresql.ENUM(name="jobstatus", create_type=False), 
+                  nullable=False, server_default="pending"),
         sa.Column("rows_loaded", sa.BigInteger, nullable=False, server_default="0"),
         sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
         sa.Column("error_message", sa.Text),
