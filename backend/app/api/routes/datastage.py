@@ -58,9 +58,10 @@ def _get_mapper_from_content(xml_content: str) -> DataStagePrecisionMapper:
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.post("/analyze", response_model=dict)
-async def analyze_xml(
-    xml_content: str = Form(..., description="DataStage .dsx XML content"),
-):
+async def analyze_xml(file: UploadFile = File(..., description="DataStage .dsx XML file")):
+    content_bytes = await file.read()
+    xml_content = content_bytes.decode("utf-8", errors="replace")
+
     """
     Parse DataStage XML and return structured JSON.
     Used by the frontend /docs page to render the job list.
@@ -73,7 +74,7 @@ async def analyze_xml(
     jobs_out = []
     for job_name, comps in mapper.jobs.items():
         stages = []
-        for cid, data in comps.items():
+        for data in comps.items():
             stages.append({
                 "stage_name": data["name"],
                 "stage_type": data["type"],
@@ -111,9 +112,12 @@ async def analyze_xml(
 
 @router.post("/report", response_class=HTMLResponse)
 async def generate_report_from_post(
-    xml_content: str = Form(..., description="DataStage .dsx XML content"),
+    file: UploadFile = File(..., description="DataStage .dsx XML file"),
     inline: bool = Form(True, description="True = abre no browser; False = força download"),
 ):
+    content_bytes = await file.read()
+    xml_content = content_bytes.decode("utf-8", errors="replace")
+
     """
     Gera o relatório HTML completo e retorna para o browser.
     Com inline=True o browser renderiza direto (sem download).
@@ -128,7 +132,7 @@ async def generate_report_from_post(
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"XML parse error: {exc}") from exc
 
-        # Cache (evict oldest if over limit)
+        # Cache
         if len(_report_cache) >= _MAX_CACHE:
             oldest = next(iter(_report_cache))
             del _report_cache[oldest]
@@ -157,12 +161,14 @@ async def generate_report_from_upload(
 
 @router.post("/lineage", response_model=LineageGraphResponse)
 async def get_lineage(
-    xml_content: str = Form(..., description="DataStage .dsx XML content"),
+    file: UploadFile = File(..., description="DataStage XML file"),
 ):
     """
     Parse XML e retorna o grafo de linhagem SOURCE → JOB → TARGET.
-    Consumido pelo /lineage page do frontend.
     """
+    content_bytes = await file.read()
+    xml_content = content_bytes.decode("utf-8", errors="replace")
+
     try:
         mapper = _get_mapper_from_content(xml_content)
     except Exception as exc:
@@ -183,7 +189,6 @@ async def get_lineage(
             "target_tables": sorted(all_tgt),
         })
 
-    # Use the xml_parser lineage builder for graph format
     from app.services.datastage.xml_parser import DataStageXMLParser
     parser = DataStageXMLParser()
     return parser.build_lineage_graph(metadata)
