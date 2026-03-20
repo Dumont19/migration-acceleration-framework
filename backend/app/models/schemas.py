@@ -197,7 +197,7 @@ class LineageNode(BaseModel):
     id: str
     label: str
     type: str  # source | job | target
-    schema: str | None = None
+    db_schema: str = Field(..., alias="schema")
     extra: dict | None = None
 
 
