@@ -49,76 +49,101 @@ export default function DocsPage() {
   }
 
   const parseXml = useCallback(async () => {
-    if (!xmlContent.trim()) { setError('Load a .dsx / .xml file first'); return }
-    setError(null)
-    setLoading(true)
-    try {
-      const form = new FormData()
-      form.append('xml_content', xmlContent)
-      const res = await fetch(`${API_BASE}/api/datastage/analyze`, { method: 'POST', body: form })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }))
-        throw new Error((err as { detail?: string }).detail ?? 'Parse failed')
-      }
-      const data: { jobs: JobSummary[] } = await res.json()
-      setJobs(data.jobs)
-      setSelectedJob(data.jobs[0] ?? null)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to parse XML')
-    } finally {
-      setLoading(false)
+  if (!xmlContent.trim()) { setError('Load a .xml file first'); return }
+  setError(null)
+  setLoading(true)
+  try {
+    const form = new FormData()
+    // Fallback: Arquivo físico ou texto colado
+    let fileToUpload = fileInputRef.current?.files?.[0]
+    if (!fileToUpload) {
+      fileToUpload = new File([xmlContent], "pasted.xml", { type: "application/xml" })
     }
-  }, [xmlContent])
+    
+    form.append('file', fileToUpload)
 
-  const openHtmlReport = useCallback(async () => {
-    if (!xmlContent.trim()) { setError('Load a .dsx / .xml file first'); return }
-    setError(null)
-    setReportLoading(true)
-    try {
-      const form = new FormData()
-      form.append('xml_content', xmlContent)
-      form.append('inline', 'true')
-      const res = await fetch(`${API_BASE}/api/datastage/report`, { method: 'POST', body: form })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const htmlBlob = await res.blob()
-      const url = URL.createObjectURL(htmlBlob)
-      window.open(url, '_blank', 'noopener')
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to generate report')
-    } finally {
-      setReportLoading(false)
+    const res = await fetch(`${API_BASE}/api/datastage/analyze`, { method: 'POST', body: form })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error((err as { detail?: string }).detail ?? 'Parse failed')
     }
-  }, [xmlContent])
+    const data: { jobs: JobSummary[] } = await res.json()
+    setJobs(data.jobs)
+    setSelectedJob(data.jobs[0] ?? null)
+  } catch (e: unknown) {
+    setError(e instanceof Error ? e.message : 'Failed to parse XML')
+  } finally {
+    setLoading(false)
+  }
+}, [xmlContent])
 
-  const downloadReport = useCallback(async () => {
-    if (!xmlContent.trim()) return
-    setReportLoading(true)
-    try {
-      const form = new FormData()
-      form.append('xml_content', xmlContent)
-      form.append('inline', 'false')
-      const res = await fetch(`${API_BASE}/api/datastage/report`, { method: 'POST', body: form })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = fileName.replace(/\.(dsx|xml)$/i, '') + '_report.html'
-      a.click()
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Download failed')
-    } finally {
-      setReportLoading(false)
+const openHtmlReport = useCallback(async () => {
+  if (!xmlContent.trim()) { setError('Load a .dsx / .xml file first'); return }
+  setError(null)
+  setReportLoading(true)
+
+  try {
+    const form = new FormData()
+    // Tenta pegar o arquivo físico. Se não existir (texto colado), cria um File em memória.
+    let fileToUpload = fileInputRef.current?.files?.[0]
+    if (!fileToUpload) {
+      fileToUpload = new File([xmlContent], "pasted.xml", { type: "application/xml" })
     }
-  }, [xmlContent, fileName])
 
-  const totalStages = jobs.reduce((s, j) => s + j.stages.length, 0)
-  const totalSql = jobs.reduce((s, j) => s + j.stages.reduce((a, st) => a + st.sql_count, 0), 0)
+    form.append('file', fileToUpload)
+    form.append('inline', 'true')
+
+    const res = await fetch(`${API_BASE}/api/datastage/report`, { method: 'POST', body: form })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    
+    const htmlBlob = await res.blob()
+    const url = URL.createObjectURL(htmlBlob)
+    window.open(url, '_blank', 'noopener')
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (e: unknown) {
+    setError(e instanceof Error ? e.message : 'Failed to generate report')
+  } finally {
+    setReportLoading(false)
+  }
+}, [xmlContent])
+
+const downloadReport = useCallback(async () => {
+  const file = fileInputRef.current?.files?.[0]
+  // Valida tanto se o conteúdo foi lido quanto se o arquivo físico está lá
+  if (!xmlContent.trim() || !file) return 
+  
+  setReportLoading(true)
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('inline', 'false') // Garante que o backend envie para download, não inline
+
+    const res = await fetch(`${API_BASE}/api/datastage/report`, { 
+      method: 'POST', 
+      body: form 
+    })
+    
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    
+    const blob = await res.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = fileName.replace(/\.(dsx|xml)$/i, '') + '_report.html'
+    a.click()
+  } catch (e: unknown) {
+    setError(e instanceof Error ? e.message : 'Download failed')
+  } finally {
+    setReportLoading(false)
+  }
+}, [xmlContent, fileName])
+
+const totalStages = jobs.reduce((s, j) => s + j.stages.length, 0)
+const totalSql = jobs.reduce((s, j) => s + j.stages.reduce((a, st) => a + st.sql_count, 0), 0)
 
   return (
     <div>
       <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 32 }}>
-        Auto-generate documentation from DataStage .dsx export files.
+        Auto-generate documentation from DataStage .xml export files.
         SQL blocks are highlighted and indented in the HTML report.
       </p>
 
@@ -204,7 +229,7 @@ export default function DocsPage() {
       )}
 
       {jobs.length === 0 ? (
-        <EmptyState message="load a .dsx file and click parse_xml or open_report_in_browser" />
+        <EmptyState message="load a .xml file and click parse_xml or open_report_in_browser" />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 20, alignItems: 'start' }}>
           <div className="card" style={{ padding: 0 }}>
