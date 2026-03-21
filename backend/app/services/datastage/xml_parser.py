@@ -1,17 +1,3 @@
-"""
-services/datastage/xml_parser.py
-----------------------------------
-Ports extrair_tabelas_datastage.py + analise_jobs_funil_safra.py.
-
-Parses DataStage job export XML files to extract:
-  - Job name, type, description
-  - Source tables (OracleConnectorPX, DB2ConnectorPX, etc.)
-  - Target tables (SnowflakeConnectorPX, etc.)
-  - SQL queries embedded in stage parameters
-  - Column mappings and transformations
-  - Job dependencies (for lineage graph)
-"""
-
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -22,7 +8,6 @@ from app.models.schemas import LineageEdge, LineageNode, LineageGraphResponse
 from datetime import datetime
 
 logger = get_logger(__name__)
-
 
 # ── Stage type mappings ───────────────────────────────────────────────────────
 
@@ -54,16 +39,10 @@ TRANSFORM_STAGES = {
 
 
 class DataStageXMLParser:
-    """
-    Parses a single DataStage .dsx export file and extracts structured metadata.
-    Thread-safe — no mutable state between calls.
-    """
-
     def parse_file(self, xml_path: str | Path) -> dict[str, Any]:
-        """Parse a .dsx file and return structured job metadata."""
         path = Path(xml_path)
         if not path.exists():
-            raise FileNotFoundError(f"DSX file not found: {path}")
+            raise FileNotFoundError(f"DataStage XML file not found: {path}")
 
         log = logger.bind(file=path.name, operation="datastage_parse")
         log.info("Parsing DataStage XML", file=str(path))
@@ -82,7 +61,6 @@ class DataStageXMLParser:
         return {"file": path.name, "jobs": jobs}
 
     def parse_content(self, xml_content: str) -> dict[str, Any]:
-        """Parse XML string directly (for API uploads)."""
         try:
             root = ET.fromstring(xml_content)
         except ET.ParseError as exc:
@@ -95,7 +73,6 @@ class DataStageXMLParser:
         job_type = job_elem.get("JobType", "Parallel")
         description = ""
 
-        # Description from properties
         for prop in job_elem.iter("Property"):
             if prop.get("Name") == "Comment":
                 description = prop.get("Value", "")
@@ -149,7 +126,7 @@ class DataStageXMLParser:
             "columns": [],
         }
 
-        # Parse XMLProperties (DataStage's property storage format)
+        # Parse XMLProperties 
         for xml_props in stage.iter("XMLProperties"):
             content = xml_props.text or ""
             result.update(self._parse_xml_properties(content, stage_type))
@@ -194,7 +171,6 @@ class DataStageXMLParser:
         return result
 
     def _regex_extract(self, content: str, stage_type: str) -> dict[str, Any]:
-        """Regex fallback for malformed XMLProperties."""
         result: dict[str, Any] = {}
 
         table_match = re.search(
@@ -214,10 +190,6 @@ class DataStageXMLParser:
         return result
 
     def build_lineage_graph(self, job_metadata: dict[str, Any]) -> LineageGraphResponse:
-        """
-        Convert parsed job metadata into SOURCE → JOB → TARGET lineage graph.
-        Compatible with D3.js force simulation on the frontend.
-        """
         nodes: list[LineageNode] = []
         edges: list[LineageEdge] = []
         seen_ids: set[str] = set()
