@@ -45,7 +45,7 @@ export default function DashboardPage() {
         <span className={styles.bootCursor} />
       </div>
       <p style={{ color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 32 }}>
-        Migration Acceleration Framework // Oracle → Snowflake // Algar Telecom
+        Migration Acceleration Framework // Oracle → Snowflake
       </p>
 
       {/* Stats row */}
