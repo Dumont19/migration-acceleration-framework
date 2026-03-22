@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.logs import JobStatus, LogLevel, OperationType
 
@@ -193,11 +193,25 @@ class GapAnalysisResult(BaseModel):
     diff_pct: float
 
 
+# ── Lineage ───────────────────────────────────────────────────────────────────
+
 class LineageNode(BaseModel):
+    """
+    Nó do grafo de linhagem.
+
+    O campo `schema` é serializado como "schema" no JSON (para o frontend),
+    mas internamente é acessado como `db_schema` para evitar conflito com
+    o método built-in `BaseModel.schema()` do Pydantic v1 e shadow de keywords.
+
+    `populate_by_name=True` permite instanciar passando tanto `schema=`
+    quanto `db_schema=` como kwargs — útil no xml_parser.py.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     label: str
-    type: str  # source | job | target
-    db_schema: str = Field(..., alias="schema")
+    type: str                                          # source | job | target
+    db_schema: str | None = Field(None, alias="schema")
     extra: dict | None = None
 
 
