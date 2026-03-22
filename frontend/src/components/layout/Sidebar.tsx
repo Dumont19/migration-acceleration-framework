@@ -5,15 +5,16 @@ import { usePathname } from 'next/navigation'
 import styles from './Sidebar.module.css'
 
 const NAV_ITEMS = [
-  { href: '/',           label: 'dashboard',  prefix: '/00' },
-  { href: '/migration',  label: 'migration',  prefix: '/01' },
-  { href: '/dblink',     label: 'db_link',    prefix: '/02' },
+  { href: '/',           label: 'dashboard',    prefix: '/00' },
+  { href: '/migration',  label: 'migration',    prefix: '/01' },
+  { href: '/dblink',     label: 'db_link',      prefix: '/02' },
   { href: '/gaps',       label: 'gap_analysis', prefix: '/03' },
-  { href: '/docs',       label: 'job_docs',   prefix: '/04' },
-  { href: '/lineage',    label: 'lineage',    prefix: '/05' },
-  { href: '/validation', label: 'validation', prefix: '/06' },
-  { href: '/logs',       label: 'audit_logs', prefix: '/07' },
-  { href: '/settings',   label: 'settings',   prefix: '/08' },
+  { href: '/docs',       label: 'job_docs',     prefix: '/04' },
+  { href: '/lineage',    label: 'lineage',       prefix: '/05' },
+  { href: '/validation', label: 'validation',   prefix: '/06' },
+  { href: '/tools',      label: 'tools',        prefix: '/07' },
+  { href: '/logs',       label: 'audit_logs',   prefix: '/08' },
+  { href: '/settings',   label: 'settings',     prefix: '/09' },
 ]
 
 export function Sidebar() {
