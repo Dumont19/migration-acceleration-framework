@@ -52,6 +52,11 @@ MAF is a full-stack internal tooling platform that accelerates and documents Ora
 
 > Oracle, Snowflake and S3 credentials are optional for local development.
 > The app starts without them and shows connection errors only in the Settings page.
+>
+> **Note on PostgreSQL:** This is the only dependency that requires a separate installation.
+> Download the installer at [postgresql.org/download](https://www.postgresql.org/download/) —
+> it includes pgAdmin 4 (a GUI client) for those who prefer not to use the terminal.
+> On Windows, the installer sets up everything automatically including the service.
 
 ---
 
