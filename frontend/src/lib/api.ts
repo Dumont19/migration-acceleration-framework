@@ -1,12 +1,3 @@
-/**
- * lib/api.ts
- * ----------
- * Typed API client for the MAF FastAPI backend.
- * All fetch calls go through here — never call fetch() directly in components.
- *
- * Base URL reads from NEXT_PUBLIC_API_URL environment variable.
- */
-
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 // ── Types (mirrors app/models/schemas.py) ────────────────────────────────────
@@ -178,23 +169,35 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const url = `${BASE_URL}${path}`
-  const res = await fetch(url, {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   })
-
   if (!res.ok) {
     const body = await res.text()
     let detail = body
     try { detail = JSON.parse(body).detail ?? body } catch { /* noop */ }
     throw new ApiError(res.status, detail)
   }
+  const text = await res.text()
+  return text ? JSON.parse(text) : ({} as T)
+}
 
+/**
+ * Envia multipart/form-data para endpoints FastAPI que usam File(...).
+ * NÃO usa o helper request() — ele força Content-Type: application/json,
+ * o que quebra o parsing de multipart no FastAPI.
+ * O browser define o boundary automaticamente quando body é FormData.
+ */
+async function requestForm<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, { method: 'POST', body: form })
+  if (!res.ok) {
+    const body = await res.text()
+    let detail = body
+    try { detail = JSON.parse(body).detail ?? body } catch { /* noop */ }
+    throw new ApiError(res.status, detail)
+  }
   const text = await res.text()
   return text ? JSON.parse(text) : ({} as T)
 }
@@ -215,23 +218,16 @@ export const migrationApi = {
     return request<JobListResponse>(`/api/migration/jobs?${qs}`)
   },
 
-  getProgress: (jobId: string) =>
-    request<JobProgress>(`/api/migration/jobs/${jobId}`),
-
-  getPartitions: (jobId: string) =>
-    request<PartitionStatus[]>(`/api/migration/jobs/${jobId}/partitions`),
-
-  cancelJob: (jobId: string) =>
-    request<{ status: string }>(`/api/migration/jobs/${jobId}/cancel`, { method: 'POST' }),
+  getProgress:   (jobId: string) => request<JobProgress>(`/api/migration/jobs/${jobId}`),
+  getPartitions: (jobId: string) => request<PartitionStatus[]>(`/api/migration/jobs/${jobId}/partitions`),
+  cancelJob:     (jobId: string) => request<{ status: string }>(`/api/migration/jobs/${jobId}/cancel`, { method: 'POST' }),
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
 export const validationApi = {
   run: (req: ValidationRequest) =>
-    request<ValidationResult>('/api/validation/run', {
-      method: 'POST', body: JSON.stringify(req)
-    }),
+    request<ValidationResult>('/api/validation/run', { method: 'POST', body: JSON.stringify(req) }),
 
   getHistory: (tableName?: string) => {
     const qs = tableName ? `?table_name=${tableName}` : ''
@@ -239,7 +235,37 @@ export const validationApi = {
   },
 }
 
-// ── Analysis ──────────────────────────────────────────────────────────────────
+// ── DataStage — todas as rotas sob /api/datastage ─────────────────────────────
+// Routers registrados em main.py: health, migration, logs, datastage.
+// NÃO existe /api/analysis — gap analysis e lineage vivem em /api/datastage.
+
+export const datastageApi = {
+  /**
+   * POST /api/datastage/analyze
+   * Analisa um .dsx/.xml e retorna metadados estruturados dos jobs.
+   */
+  analyze: (form: FormData) =>
+    requestForm<{ jobs: unknown[] }>('/api/datastage/analyze', form),
+
+  /**
+   * POST /api/datastage/lineage
+   * Gera o grafo de linhagem SOURCE → JOB → TARGET a partir de um .dsx/.xml.
+   */
+  lineage: (form: FormData) =>
+    requestForm<LineageGraph>('/api/datastage/lineage', form),
+
+  /**
+   * POST /api/datastage/report
+   * Retorna HTML bruto — use fetch direto para blob (ver job_docs page).
+   */
+  reportRaw: async (form: FormData): Promise<Blob> => {
+    const res = await fetch(`${BASE_URL}/api/datastage/report`, { method: 'POST', body: form })
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`)
+    return res.blob()
+  },
+}
+
+// ── Analysis (somente gap analysis — lineage migrada para datastageApi) ────────
 
 export const analysisApi = {
   runGapAnalysis: (req: {
@@ -249,28 +275,7 @@ export const analysisApi = {
     date_column?: string
     granularity?: string
   }) =>
-    request<GapResult[]>('/api/analysis/gaps', {
-      method: 'POST', body: JSON.stringify(req)
-    }),
-
-  getLineage: (jobName: string) =>
-    request<LineageGraph>(`/api/analysis/lineage/${encodeURIComponent(jobName)}`),
-
-  uploadDsxForLineage: (xmlContent: string) =>
-    request<LineageGraph>('/api/analysis/lineage/upload', {
-      method: 'POST',
-      body: JSON.stringify({ xml_content: xmlContent }),
-    }),
-}
-
-// ── DataStage docs ────────────────────────────────────────────────────────────
-
-export const datastageApi = {
-  generateDocs: (xmlContent: string) =>
-    request<{ jobs: unknown[] }>('/api/datastage/docs/generate', {
-      method: 'POST',
-      body: JSON.stringify({ xml_content: xmlContent }),
-    }),
+    request<GapResult[]>('/api/analysis/gaps', { method: 'POST', body: JSON.stringify(req) }),
 }
 
 // ── Logs ──────────────────────────────────────────────────────────────────────
@@ -296,19 +301,22 @@ export const logsApi = {
     return request<LogEntry[]>(`/api/logs/job/${jobId}${qs}`)
   },
 
-  getStats: () => request<{ by_level: Record<string, number>; top_error_tables: { table: string; errors: number }[]; total: number }>(
-    '/api/logs/stats'
-  ),
+  getStats: () =>
+    request<{
+      by_level: Record<string, number>
+      top_error_tables: { table: string; errors: number }[]
+      total: number
+    }>('/api/logs/stats'),
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
 export const healthApi = {
-  all: () => request<HealthResponse>('/api/health'),
-  oracle: () => request<ConnectionHealth>('/api/health/oracle'),
+  all:       () => request<HealthResponse>('/api/health'),
+  oracle:    () => request<ConnectionHealth>('/api/health/oracle'),
   snowflake: () => request<ConnectionHealth>('/api/health/snowflake'),
-  s3: () => request<ConnectionHealth>('/api/health/s3'),
-  database: () => request<ConnectionHealth>('/api/health/database'),
+  s3:        () => request<ConnectionHealth>('/api/health/s3'),
+  database:  () => request<ConnectionHealth>('/api/health/database'),
 }
 
 export { ApiError }

@@ -6,7 +6,7 @@ import '@/styles/globals.css'
 
 export const metadata: Metadata = {
   title: 'MAF — Migration Acceleration Framework',
-  description: 'Oracle → Snowflake migration tool | Algar Telecom',
+  description: 'Oracle → Snowflake migration acceleration framework',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

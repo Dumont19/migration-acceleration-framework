@@ -1,12 +1,3 @@
-/**
- * lib/useJobProgress.ts
- * ----------------------
- * React hook for WebSocket job progress streaming.
- *
- * Usage:
- *   const { progress, logs, connected } = useJobProgress(jobId)
- */
-
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'

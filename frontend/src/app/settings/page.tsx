@@ -78,58 +78,6 @@ export default function SettingsPage() {
       <button className="btn btn--outline" onClick={runHealthCheck} disabled={testing}>
         {testing ? '// running checks...' : '> retest_all_connections'}
       </button>
-
-      {/* .env reference */}
-      <div style={{ marginTop: 40 }}>
-        <SectionLabel>env_reference</SectionLabel>
-        <div className="card">
-          <pre style={{
-            fontSize: 'var(--font-size-xs)',
-            color: 'var(--text-secondary)',
-            lineHeight: 2,
-            overflowX: 'auto',
-          }}>{`# Oracle
-ORACLE_HOST=servidor.oracle.com
-ORACLE_PORT=1521
-ORACLE_SERVICE=ORCL
-ORACLE_USER=seu_usuario
-ORACLE_PASSWORD=sua_senha
-ORACLE_SCHEMA=DWADM
-
-# Snowflake
-SNOWFLAKE_ACCOUNT=conta.snowflakecomputing.com
-SNOWFLAKE_USER=usuario@algar.com.br
-SNOWFLAKE_ROLE=SYSADMIN
-SNOWFLAKE_WAREHOUSE=WH_COMPUTE
-SNOWFLAKE_DATABASE=DWDEV
-SNOWFLAKE_SCHEMA=DWADM
-SNOWFLAKE_AUTHENTICATOR=externalbrowser
-
-# AWS S3
-AWS_ACCESS_KEY_ID=sua_access_key
-AWS_SECRET_ACCESS_KEY=sua_secret_key
-AWS_REGION=us-east-1
-S3_BUCKET=bucket-migracao
-
-# PostgreSQL (log database)
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=maf_logs
-DB_USER=maf_user
-DB_PASSWORD=sua_senha`}
-          </pre>
-        </div>
-      </div>
-
-      {/* App info */}
-      <div style={{ marginTop: 32 }}>
-        <SectionLabel>app_info</SectionLabel>
-        <div className="grid-3">
-          <StatCard label="version"      value={health?.app_version ?? '—'} />
-          <StatCard label="environment"  value={health?.environment ?? '—'} />
-          <StatCard label="last_check"   value={health?.timestamp?.substring(11, 19) ?? '—'} sub="UTC" />
-        </div>
-      </div>
     </div>
   )
 }
