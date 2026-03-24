@@ -1,14 +1,9 @@
-"""
-tests/unit/test_state.py
-"""
-
 import uuid
 import pytest
 from unittest.mock import patch
 
 from app.models.logs import JobStatus, OperationType
 from app.services.migration.state import JobStateService
-
 
 @pytest.mark.asyncio
 async def test_create_job(db_session):
@@ -20,7 +15,6 @@ async def test_create_job(db_session):
     )
     assert isinstance(job_id, uuid.UUID)
     await db_session.commit()
-
 
 @pytest.mark.asyncio
 async def test_job_lifecycle(db_session):
@@ -52,7 +46,6 @@ async def test_job_lifecycle(db_session):
     progress = await svc.get_progress(job_id)
     assert progress.status == JobStatus.DONE
 
-
 @pytest.mark.asyncio
 async def test_fail_job(db_session):
     svc = JobStateService(db_session)
@@ -67,14 +60,10 @@ async def test_fail_job(db_session):
     assert progress.status == JobStatus.ERROR
 
 
-# ── XML Parser tests ──────────────────────────────────────────────────────────
+# XML Parser tests
 
-"""
-tests/unit/test_xml_parser.py
-"""
 import textwrap
 from app.services.datastage.xml_parser import DataStageXMLParser
-
 
 SAMPLE_DSX = textwrap.dedent("""
     <DSExport>
@@ -101,7 +90,6 @@ SAMPLE_DSX = textwrap.dedent("""
     </DSExport>
 """)
 
-
 def test_parse_job_extracts_names():
     parser = DataStageXMLParser()
     result = parser.parse_content(SAMPLE_DSX)
@@ -111,13 +99,11 @@ def test_parse_job_extracts_names():
     assert "F_CEL_NETWORK_EVENT" in job["source_tables"]
     assert "F_CEL_NETWORK_EVENT" in job["target_tables"]
 
-
 def test_parse_sql_extraction():
     parser = DataStageXMLParser()
     result = parser.parse_content(SAMPLE_DSX)
     job = result["jobs"][0]
     assert any("SELECT" in q for q in job["sql_queries"] if q)
-
 
 def test_lineage_graph_structure():
     parser = DataStageXMLParser()
@@ -129,7 +115,6 @@ def test_lineage_graph_structure():
     assert "source" in types
     assert "job" in types
     assert "target" in types
-
 
 def test_partition_list_generation():
     from app.services.migration.partitioned import PartitionedMigrationService

@@ -1,21 +1,3 @@
-"""
-services/migration/partitioned.py
-----------------------------------
-Partitioned migration engine — Oracle → CSV.GZ → S3 → Snowflake RAW → MERGE.
-
-Ports the logic from:
-  - app/main.py
-  - scripts/migration/fast_migration.py
-  - fix_failed_partitions.py
-  - split_partitions.py / split_partitions_daily.py
-
-Key changes from original:
-  - No Tkinter callbacks — uses async WebSocket broadcaster for progress
-  - State persisted to PostgreSQL via JobStateService
-  - Connections from shared pools (not per-script instantiation)
-  - Full structured logging on every step
-"""
-
 import asyncio
 import csv
 import gzip
@@ -39,25 +21,15 @@ logger = get_logger(__name__)
 
 
 class PartitionedMigrationService:
-    """
-    Orchestrates a full partitioned migration run.
-    One instance per request — not a singleton.
-    """
-
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
         self._state = get_job_state_service(db)
         self._progress_broadcaster = None  # Injected by WebSocket handler
 
     def set_broadcaster(self, broadcaster) -> None:
-        """Inject WebSocket broadcaster for real-time progress."""
         self._progress_broadcaster = broadcaster
 
     async def run(self, request: MigrationRequest, triggered_by: str = "api") -> uuid.UUID:
-        """
-        Start migration. Returns job_id immediately.
-        Actual migration runs as background task.
-        """
         job_id = await self._state.create_job(
             table_name=request.table_name,
             operation=OperationType.MIGRATION_PARTITIONED,
@@ -138,10 +110,6 @@ class PartitionedMigrationService:
     async def _migrate_partition(
         self, partition: dict, request: MigrationRequest, log
     ) -> int:
-        """
-        Core partition work: Oracle extract → CSV.GZ → S3 → COPY INTO RAW → MERGE.
-        Returns number of rows loaded.
-        """
         table = request.table_name
         key = partition["key"]
         date_from = partition["date_from"]
@@ -247,7 +215,6 @@ class PartitionedMigrationService:
     async def _run_merge(
         self, table: str, schema: str, partition_col: str, date_from: str
     ) -> None:
-        """Merge RAW → Final for the given partition date."""
         from sqlalchemy import text
         sql = f"""
             MERGE INTO {schema}.{table} AS tgt

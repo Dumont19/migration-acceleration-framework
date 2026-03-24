@@ -1,18 +1,3 @@
-"""
-api/ws/progress.py
-------------------
-WebSocket endpoint for real-time job progress streaming.
-
-Clients connect to: ws://localhost:8000/ws/progress/{job_id}
-
-Message types:
-  - progress  : JobProgressResponse payload (current state)
-  - log       : Single log line from the migration engine
-  - done      : Final state when job completes
-  - error     : Job failed — includes error message
-  - ping/pong : Heartbeat to detect dropped connections
-"""
-
 import asyncio
 import json
 import uuid
@@ -26,12 +11,6 @@ logger = get_logger(__name__)
 
 
 class ConnectionManager:
-    """
-    Manages active WebSocket connections per job_id.
-    Multiple browser tabs can subscribe to the same job.
-    Thread-safe via asyncio (single-threaded event loop).
-    """
-
     def __init__(self) -> None:
         # job_id → set of active WebSocket connections
         self._connections: dict[str, set[WebSocket]] = {}
@@ -52,7 +31,6 @@ class ConnectionManager:
         logger.info("WebSocket disconnected", job_id=job_id)
 
     async def broadcast(self, job_id: str, message: dict) -> None:
-        """Send message to all subscribers of a job."""
         async with self._lock:
             connections = set(self._connections.get(job_id, set()))
 
@@ -107,22 +85,10 @@ class ConnectionManager:
             return len(self._connections.get(job_id, set()))
         return sum(len(v) for v in self._connections.values())
 
-
 # Global singleton — shared across all requests
 ws_manager = ConnectionManager()
 
-
 async def handle_progress_websocket(websocket: WebSocket, job_id: str) -> None:
-    """
-    WebSocket handler for /ws/progress/{job_id}.
-    Registered in the router — see api/routes/migration.py.
-
-    Flow:
-      1. Accept connection
-      2. Send current job state immediately (catch-up)
-      3. Keep connection alive with heartbeat
-      4. Disconnect cleanly on client close or timeout
-    """
     # Validate UUID
     try:
         uuid.UUID(job_id)

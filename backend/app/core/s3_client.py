@@ -1,16 +1,3 @@
-"""
-core/s3_client.py
------------------
-Singleton boto3 S3 client for migration staging.
-Wraps upload, download and presigned URL operations.
-
-Usage:
-    from app.core.s3_client import get_s3_client
-
-    s3 = get_s3_client()
-    await s3.upload_file(local_path, s3_key)
-"""
-
 import asyncio
 from pathlib import Path
 
@@ -26,7 +13,6 @@ _s3_client = None
 
 
 def init_s3_client() -> None:
-    """Initialize boto3 S3 client. Called once during lifespan startup."""
     global _s3_client
     settings = get_settings().s3
 
@@ -46,8 +32,6 @@ def get_s3_client() -> "S3Client":
 
 
 class S3Client:
-    """Async-friendly wrapper around boto3 S3 client."""
-
     def __init__(self, client) -> None:
         self._client = client
         self._settings = get_settings().s3
@@ -64,7 +48,6 @@ class S3Client:
         return f"{self.prefix.rstrip('/')}/{key.lstrip('/')}"
 
     async def upload_file(self, local_path: str | Path, s3_key: str) -> str:
-        """Upload a local file to S3. Returns the full S3 key."""
         full_key = self._full_key(s3_key)
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
@@ -83,7 +66,6 @@ class S3Client:
         )
 
     async def list_objects(self, prefix: str = "") -> list[dict]:
-        """List objects under a prefix. Returns list of {key, size, last_modified}."""
         full_prefix = self._full_key(prefix) if prefix else self.prefix
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
@@ -122,7 +104,6 @@ class S3Client:
             raise
 
     async def test_connection(self) -> dict:
-        """Health check."""
         import time
         try:
             start = time.monotonic()

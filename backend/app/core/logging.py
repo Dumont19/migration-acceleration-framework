@@ -1,24 +1,3 @@
-"""
-core/logging.py
----------------
-Structured logging setup using structlog + standard logging.
-
-Two outputs:
-  1. Console  — human-readable (dev) or JSON (production)
-  2. Database — async sink writing to `job_logs` table for persistent audit trail
-
-Usage:
-    from app.core.logging import get_logger
-    logger = get_logger(__name__)
-
-    # In a service:
-    await logger.ainfo("Partition loaded", table="F_CEL_NETWORK_EVENT", rows=120_000)
-
-    # Bind context for a full request:
-    log = logger.bind(job_id=job_id, table=table_name)
-    await log.ainfo("Migration started")
-"""
-
 import logging
 import sys
 from typing import Any
@@ -26,37 +5,22 @@ from typing import Any
 import structlog
 from structlog.types import EventDict, WrappedLogger
 
-
-# ── Custom processors ────────────────────────────────────────────────────────
-
 def add_app_context(
     logger: WrappedLogger, method_name: str, event_dict: EventDict
 ) -> EventDict:
     """Inject static app metadata into every log entry."""
     event_dict.setdefault("app", "maf")
-    event_dict.setdefault("version", "4.0.0")
+    event_dict.setdefault("version", "1.0.0")
     return event_dict
 
 
 def drop_color_message_key(
     logger: WrappedLogger, method_name: str, event_dict: EventDict
 ) -> EventDict:
-    """Remove uvicorn's color_message key to keep JSON clean."""
     event_dict.pop("color_message", None)
     return event_dict
 
-
-# ── DB Sink (async) ──────────────────────────────────────────────────────────
-
 class DatabaseLogSink:
-    """
-    Async structlog processor that persists log entries to PostgreSQL.
-    Only active for WARNING+ in production; INFO+ in development.
-
-    Inserted fields: job_id, table_name, operation, level, message,
-                     extra (JSONB), created_at (auto).
-    """
-
     def __init__(self, min_level: str = "INFO") -> None:
         self._min_level = getattr(logging, min_level.upper(), logging.INFO)
 
@@ -100,11 +64,7 @@ class DatabaseLogSink:
 
         return event_dict
 
-
-# ── Setup ────────────────────────────────────────────────────────────────────
-
 _db_sink = DatabaseLogSink(min_level="INFO")
-
 
 def configure_logging(log_level: str = "INFO", environment: str = "development") -> None:
     """
@@ -162,8 +122,4 @@ def configure_logging(log_level: str = "INFO", environment: str = "development")
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:
-    """
-    Returns a structlog bound logger.
-    Bind job context with .bind(job_id=..., table=..., operation=...)
-    """
     return structlog.get_logger(name)
