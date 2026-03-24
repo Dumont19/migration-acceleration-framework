@@ -1,11 +1,3 @@
-"""
-core/config.py
---------------
-Centralized configuration using Pydantic Settings v2.
-Reads from environment variables or .env file.
-All other modules import `get_settings()` — never read os.environ directly.
-"""
-
 from functools import lru_cache
 from typing import Literal
 
@@ -52,29 +44,11 @@ class S3Settings(BaseSettings):
 
 
 class DatabaseSettings(BaseSettings):
-    """PostgreSQL — persistent log storage."""
-    model_config = SettingsConfigDict(env_prefix="DB_", env_file=".env", extra="ignore")
-
-    host: str = Field("localhost", alias="DB_HOST")
-    port: int = Field(5432, alias="DB_PORT")
-    name: str = Field("maf_logs", alias="DB_NAME")
-    user: str = Field("maf_user", alias="DB_USER")
-    password: SecretStr = Field(..., alias="DB_PASSWORD")
-    pool_size: int = Field(5, alias="DB_POOL_SIZE")
-    max_overflow: int = Field(10, alias="DB_MAX_OVERFLOW")
-    echo_sql: bool = Field(False, alias="DB_ECHO_SQL", description="Log SQL statements (dev only)")
+    db_path: str = Field("./maf.db", alias = "DB_PATH")    
 
     @property
     def url(self) -> str:
-        pwd = self.password.get_secret_value()
-        return f"postgresql+asyncpg://{self.user}:{pwd}@{self.host}:{self.port}/{self.name}"
-
-    @property
-    def sync_url(self) -> str:
-        """For Alembic migrations (sync driver)."""
-        pwd = self.password.get_secret_value()
-        return f"postgresql+psycopg2://{self.user}:{pwd}@{self.host}:{self.port}/{self.name}"
-
+        return f"sqlite+aiosqlite:///{self.db_path}"
 
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

@@ -1,15 +1,3 @@
-"""
-models/logs.py
---------------
-SQLAlchemy ORM models for persistent log storage.
-
-Tables:
-  - migration_jobs   : one row per migration execution (lifecycle tracking)
-  - job_logs         : append-only log entries per job (audit trail)
-  - job_partitions   : partition-level granularity for partitioned migrations
-  - validation_runs  : Oracle vs Snowflake comparison results
-"""
-
 import uuid
 from datetime import datetime
 from enum import Enum as PyEnum
@@ -35,7 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
-# ── Enums ────────────────────────────────────────────────────────────────────
+# Enums
 
 class JobStatus(str, PyEnum):
     PENDING   = "pending"
@@ -43,7 +31,6 @@ class JobStatus(str, PyEnum):
     DONE      = "done"
     ERROR     = "error"
     CANCELLED = "cancelled"
-
 
 class OperationType(str, PyEnum):
     MIGRATION_PARTITIONED = "migration_partitioned"
@@ -59,7 +46,6 @@ class OperationType(str, PyEnum):
     MERGE_RUN             = "merge_run"
     COPY_S3               = "copy_s3"
 
-
 class LogLevel(str, PyEnum):
     DEBUG    = "DEBUG"
     INFO     = "INFO"
@@ -67,14 +53,9 @@ class LogLevel(str, PyEnum):
     ERROR    = "ERROR"
     CRITICAL = "CRITICAL"
 
-
-# ── Models ───────────────────────────────────────────────────────────────────
+# Models
 
 class MigrationJob(Base):
-    """
-    One row per migration run.
-    Tracks lifecycle: created → running → done | error.
-    """
     __tablename__ = "migration_jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -132,13 +113,7 @@ class MigrationJob(Base):
         Index("ix_migration_jobs_created_at", "created_at"),
     )
 
-
 class JobLog(Base):
-    """
-    Append-only log entries for a migration job.
-    Written by the DatabaseLogSink in core/logging.py.
-    Never update or delete rows — audit trail must be immutable.
-    """
     __tablename__ = "job_logs"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -174,12 +149,7 @@ class JobLog(Base):
         ),
     )
 
-
 class JobPartition(Base):
-    """
-    Granular tracking of each partition in a partitioned migration.
-    Allows retry of individual failed partitions.
-    """
     __tablename__ = "job_partitions"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -205,12 +175,7 @@ class JobPartition(Base):
         Index("ix_job_partitions_job_status", "job_id", "status"),
     )
 
-
 class ValidationRun(Base):
-    """
-    Results of an Oracle vs Snowflake validation comparison.
-    Stored separately from job logs for structured querying.
-    """
     __tablename__ = "validation_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(

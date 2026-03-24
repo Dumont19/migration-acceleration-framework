@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.config import DatabaseSettings
 from app.core.database import Base
-import app.models.logs  # garante que os models são carregados
+import app.models.logs  
 
 config = context.config
 

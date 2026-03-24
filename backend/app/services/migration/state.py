@@ -1,22 +1,3 @@
-"""
-services/migration/state.py
-----------------------------
-Centralized job state manager.
-
-Replaces the scattered *_fast_migration_state.json files from the original codebase.
-All state is stored in PostgreSQL (migration_jobs + job_partitions tables).
-In-memory cache provides sub-millisecond reads for WebSocket broadcasts.
-
-Usage:
-    state = get_job_state_service()
-
-    job_id = await state.create_job(table="F_CEL_NETWORK_EVENT", operation=..., config={})
-    await state.start_job(job_id)
-    await state.update_partition(job_id, "2024-03-01", JobStatus.DONE, rows=1_204_881)
-    await state.finish_job(job_id, total_rows=50_000_000)
-    await state.fail_job(job_id, error="ORA-01555: snapshot too old")
-"""
-
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -39,7 +20,7 @@ class JobStateService:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
 
-    # ── Create / Lifecycle ────────────────────────────────────────────────
+    # Create / Lifecycle
 
     async def create_job(
         self,
@@ -117,7 +98,7 @@ class JobStateService:
         _job_cache.pop(str(job_id), None)
         logger.error("Job failed", job_id=str(job_id), error=error)
 
-    # ── Partition tracking ────────────────────────────────────────────────
+    # Partition tracking 
 
     async def register_partitions(self, job_id: uuid.UUID, partition_keys: list[str]) -> None:
         partitions = [
@@ -167,7 +148,7 @@ class JobStateService:
             )
         )
 
-    # ── Query ─────────────────────────────────────────────────────────────
+    # Query
 
     async def get_progress(self, job_id: uuid.UUID) -> JobProgressResponse | None:
         job = await self._get_job(job_id)
@@ -210,14 +191,13 @@ class JobStateService:
             for p in result.scalars().all()
         ]
 
-    # ── Helpers ───────────────────────────────────────────────────────────
+    # Helpers 
 
     async def _get_job(self, job_id: uuid.UUID) -> MigrationJob | None:
         result = await self._db.execute(
             select(MigrationJob).where(MigrationJob.id == job_id)
         )
         return result.scalar_one_or_none()
-
 
 def get_job_state_service(db: AsyncSession) -> JobStateService:
     return JobStateService(db)

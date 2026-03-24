@@ -1,17 +1,3 @@
-"""
-core/snowflake_client.py
-------------------------
-Singleton Snowflake connector with connection pooling via SQLAlchemy async engine.
-Supports both SSO (externalbrowser) and password-based auth.
-
-Usage:
-    from app.core.snowflake_client import get_snowflake_engine
-
-    async with get_snowflake_engine().connect() as conn:
-        result = await conn.execute(text("SELECT COUNT(*) FROM DWADM.F_CEL_NETWORK_EVENT"))
-        row = result.fetchone()
-"""
-
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -21,7 +7,6 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 _engine: AsyncEngine | None = None
-
 
 def _build_connection_url() -> str:
     settings = get_settings().snowflake
@@ -41,7 +26,6 @@ def _build_connection_url() -> str:
 
 
 def init_snowflake_engine() -> None:
-    """Initialize Snowflake SQLAlchemy engine. Called once during lifespan startup."""
     global _engine
     settings = get_settings().snowflake
 
@@ -80,7 +64,6 @@ def get_snowflake_engine() -> AsyncEngine:
 
 
 async def test_snowflake_connection() -> dict:
-    """Health check — returns latency and current warehouse/role."""
     import time
     try:
         start = time.monotonic()

@@ -1,14 +1,3 @@
-"""
-services/validation/comparator.py
-----------------------------------
-Ports validate_migration.py + compare_*.py scripts.
-
-Performs three levels of comparison:
-  1. Count check   — Oracle vs Snowflake row counts
-  2. Schema check  — column names, types, nullability
-  3. Sample check  — N random rows compared field by field
-"""
-
 import uuid
 from datetime import datetime, timezone
 
@@ -23,7 +12,6 @@ from app.models.logs import ValidationRun
 from app.models.schemas import ValidationRequest, ValidationResultResponse
 
 logger = get_logger(__name__)
-
 
 class ValidationService:
     def __init__(self, db: AsyncSession) -> None:

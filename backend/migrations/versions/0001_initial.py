@@ -1,8 +1,3 @@
-"""
-Alembic initial migration — creates all MAF tables.
-Restored version with idempotency fixes for Postgres Enums.
-"""
-
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -12,10 +7,7 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
-
 def upgrade() -> None:
-    # ── Enums (Criação Segura) ─────────────────────────────────────────────
-    # Usamos blocos anônimos PL/pgSQL para evitar o erro DuplicateObject
     op.execute("""
         DO $$ 
         BEGIN 
@@ -35,7 +27,7 @@ def upgrade() -> None:
         END $$;
     """)
 
-    # ── migration_jobs ─────────────────────────────────────────────────
+    # migration_jobs
     op.create_table(
         "migration_jobs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),

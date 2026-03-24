@@ -1,18 +1,3 @@
-"""
-core/oracle_client.py
----------------------
-Singleton Oracle connection pool using oracledb (thin mode).
-Shared across all services — never instantiate a new connection per request.
-
-Usage:
-    from app.core.oracle_client import get_oracle_pool
-
-    async with get_oracle_pool().acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute("SELECT COUNT(*) FROM DWADM.F_CEL_NETWORK_EVENT")
-            row = await cur.fetchone()
-"""
-
 import oracledb
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -23,7 +8,6 @@ _pool: oracledb.AsyncConnectionPool | None = None
 
 
 async def init_oracle_pool() -> None:
-    """Initialize Oracle connection pool. Called once during lifespan startup."""
     global _pool
     settings = get_settings().oracle
 
@@ -49,7 +33,6 @@ async def init_oracle_pool() -> None:
 
 
 async def close_oracle_pool() -> None:
-    """Drain and close Oracle pool. Called during lifespan shutdown."""
     global _pool
     if _pool:
         await _pool.close(force=False)  # Wait for in-flight queries
@@ -64,7 +47,6 @@ def get_oracle_pool() -> oracledb.AsyncConnectionPool:
 
 
 async def test_oracle_connection() -> dict:
-    """Health check — returns latency and version info."""
     import time
     try:
         start = time.monotonic()

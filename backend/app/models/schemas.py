@@ -1,10 +1,3 @@
-"""
-models/schemas.py
------------------
-Pydantic v2 schemas for API request/response bodies.
-Separate from ORM models — these are the public API contract.
-"""
-
 import uuid
 from datetime import datetime
 from typing import Any
@@ -13,18 +6,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.logs import JobStatus, LogLevel, OperationType
 
-
-# ── Base ─────────────────────────────────────────────────────────────────────
+# Base
 
 class TimestampMixin(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-
-# ── Migration ────────────────────────────────────────────────────────────────
+# Migration
 
 class MigrationRequest(BaseModel):
-    """POST /api/migration/start"""
     table_name: str = Field(..., min_length=1, max_length=128, description="Oracle table name")
     operation: OperationType = Field(OperationType.MIGRATION_PARTITIONED)
     date_from: str | None = Field(None, description="Partition start date YYYY-MM-DD")
@@ -41,7 +31,6 @@ class MigrationRequest(BaseModel):
     def uppercase_table(cls, v: str) -> str:
         return v.upper().strip()
 
-
 class PartitionStatus(BaseModel):
     partition_key: str
     status: JobStatus
@@ -51,9 +40,7 @@ class PartitionStatus(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
 
-
 class JobProgressResponse(BaseModel):
-    """GET /api/migration/jobs/{job_id}/progress — also sent over WebSocket"""
     job_id: uuid.UUID
     table_name: str
     operation: OperationType
@@ -70,7 +57,6 @@ class JobProgressResponse(BaseModel):
     last_log_message: str | None = None
     updated_at: datetime
 
-
 class JobSummaryResponse(BaseModel):
     job_id: uuid.UUID
     table_name: str
@@ -81,18 +67,15 @@ class JobSummaryResponse(BaseModel):
     failed_partitions: int
     created_at: datetime
 
-
 class JobListResponse(BaseModel):
     items: list[JobSummaryResponse]
     total: int
     page: int
     page_size: int
 
-
-# ── WebSocket message ─────────────────────────────────────────────────────────
+# WebSocket message
 
 class WSProgressMessage(BaseModel):
-    """Message sent over WebSocket /ws/progress/{job_id}"""
     type: str = "progress"  # progress | log | done | error
     job_id: str
     table_name: str
@@ -102,18 +85,15 @@ class WSProgressMessage(BaseModel):
     log: str | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-
-# ── Validation ───────────────────────────────────────────────────────────────
+# Validation
 
 class ValidationRequest(BaseModel):
-    """POST /api/validation/run"""
     table_name: str
     sample_size: int = Field(100, ge=10, le=10_000)
     check_schema: bool = True
     check_counts: bool = True
     check_sample: bool = True
     date_filter: str | None = Field(None, description="Optional WHERE clause filter")
-
 
 class ValidationResultResponse(BaseModel):
     id: uuid.UUID
@@ -130,8 +110,7 @@ class ValidationResultResponse(BaseModel):
     notes: str | None
     created_at: datetime
 
-
-# ── Logs ─────────────────────────────────────────────────────────────────────
+# Logs
 
 class LogEntryResponse(BaseModel):
     id: int
@@ -143,9 +122,7 @@ class LogEntryResponse(BaseModel):
     extra: dict | None
     created_at: datetime
 
-
 class LogQueryParams(BaseModel):
-    """Query parameters for GET /api/logs"""
     job_id: uuid.UUID | None = None
     table_name: str | None = None
     level: LogLevel | None = None
@@ -154,15 +131,13 @@ class LogQueryParams(BaseModel):
     page: int = Field(1, ge=1)
     page_size: int = Field(50, ge=10, le=500)
 
-
-# ── Health ───────────────────────────────────────────────────────────────────
+# Health
 
 class ConnectionHealth(BaseModel):
     status: str  # ok | error
     latency_ms: float | None = None
     error: str | None = None
     extra: dict | None = None
-
 
 class HealthResponse(BaseModel):
     oracle: ConnectionHealth
@@ -173,8 +148,7 @@ class HealthResponse(BaseModel):
     environment: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-
-# ── Analysis ─────────────────────────────────────────────────────────────────
+# Analysis
 
 class GapAnalysisRequest(BaseModel):
     table_name: str
@@ -192,20 +166,9 @@ class GapAnalysisResult(BaseModel):
     diff: int
     diff_pct: float
 
-
-# ── Lineage ───────────────────────────────────────────────────────────────────
+#Lineage 
 
 class LineageNode(BaseModel):
-    """
-    Nó do grafo de linhagem.
-
-    O campo `schema` é serializado como "schema" no JSON (para o frontend),
-    mas internamente é acessado como `db_schema` para evitar conflito com
-    o método built-in `BaseModel.schema()` do Pydantic v1 e shadow de keywords.
-
-    `populate_by_name=True` permite instanciar passando tanto `schema=`
-    quanto `db_schema=` como kwargs — útil no xml_parser.py.
-    """
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
@@ -214,12 +177,10 @@ class LineageNode(BaseModel):
     db_schema: str | None = Field(None, alias="schema")
     extra: dict | None = None
 
-
 class LineageEdge(BaseModel):
     source: str
     target: str
     label: str | None = None
-
 
 class LineageGraphResponse(BaseModel):
     nodes: list[LineageNode]
