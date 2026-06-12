@@ -304,3 +304,76 @@ DimensionHomologator
 - Lookups `CHashedFileStage` → `LEFT JOIN ... ON ... COALESCE(..., -1)`
 - Schema de trabalho: `DWDEV.MATHEUSDR`
 - Config table: `DWDEV.HUGOA.DW_VERSIONA`
+
+---
+
+## 5. Auditoria de Dependências e Licenças
+
+> Critério de aceitação: MIT · Apache 2.0 · BSD · ISC · PSF (Python Software Foundation).
+> Todas as dependências abaixo atendem esse critério. Nenhuma licença copyleft (GPL/LGPL/AGPL) presente.
+
+### 5.1 Dependências Python (`backend/pyproject.toml`)
+
+| Pacote | Versão mínima | Licença | Observação |
+|--------|--------------|---------|------------|
+| `fastapi` | 0.111.0 | MIT | Framework web principal |
+| `python-multipart` | 0.0.9 | Apache 2.0 | Parse de form-data/file upload |
+| `uvicorn[standard]` | 0.29.0 | BSD | ASGI server |
+| `pydantic` | 2.7.0 | MIT | Validação e serialização |
+| `pydantic-settings` | 2.2.0 | MIT | Carregamento de .env |
+| `sqlalchemy` | 2.0.29 | MIT | ORM async |
+| `aiosqlite` | 0.19.0 | MIT | Driver SQLite assíncrono |
+| `alembic` | 1.13.1 | MIT | Migrações de banco |
+| `oracledb` | 2.2.1 | Apache 2.0 | Driver Oracle thin (sem Instant Client) |
+| `snowflake-connector-python` | 3.10.0 | Apache 2.0 | Conector Snowflake |
+| `snowflake-sqlalchemy` | 1.6.0 | Apache 2.0 | Dialeto SQLAlchemy para Snowflake |
+| `boto3` | 1.34.0 | Apache 2.0 | AWS SDK (S3) |
+| `pandas` | 2.2.0 | BSD | Comparação de amostras na validação |
+| `structlog` | 24.1.0 | Apache 2.0 / MIT | Logging estruturado |
+| `python-dotenv` | 1.0.1 | BSD | Leitura de .env |
+| `httpx` | 0.27.0 | BSD | Cliente HTTP (testes) |
+| `beautifulsoup4` | 4.12.0 | MIT | Parse de XML DataStage |
+| `lxml` | 5.0.0 | BSD | Parser XML de alto desempenho |
+
+**Dev-only:**
+
+| Pacote | Licença |
+|--------|---------|
+| `pytest` | MIT |
+| `pytest-asyncio` | Apache 2.0 |
+| `pytest-cov` | MIT |
+| `ruff` | MIT |
+| `mypy` | MIT |
+
+### 5.2 Dependências Node.js (`frontend/package.json`)
+
+| Pacote | Versão mínima | Licença | Observação |
+|--------|--------------|---------|------------|
+| `next` | 16.2.0 | MIT | Framework React (App Router) |
+| `react` | 18.3.1 | MIT | UI library |
+| `react-dom` | 18.3.1 | MIT | DOM renderer |
+| `d3` | 7.9.0 | ISC | Grafo de linhagem interativo |
+
+**Dev-only:**
+
+| Pacote | Licença |
+|--------|---------|
+| `@types/d3` | MIT |
+| `@types/node` | MIT |
+| `@types/react` | MIT |
+| `@types/react-dom` | MIT |
+| `eslint` | MIT |
+| `eslint-config-next` | MIT |
+| `typescript` | Apache 2.0 |
+
+### 5.3 Nota sobre ISC (d3)
+
+A licença ISC é funcionalmente equivalente à BSD 2-Clause — é uma licença permissiva que permite uso comercial, modificação e distribuição sem restrições. É aprovada pela OSI e amplamente aceita em ambientes corporativos.
+
+### 5.4 Dependências de runtime zero-config
+
+O projeto **não requer** nenhuma instalação de sistema além de Python e Node.js:
+
+- **Oracle**: `oracledb` opera em modo thin — sem Oracle Instant Client
+- **Banco de dados**: SQLite embutido no Python — sem servidor separado em desenvolvimento
+- **Sem Docker**: a stack completa roda com `uvicorn` + `npm run dev`
