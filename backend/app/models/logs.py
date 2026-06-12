@@ -4,6 +4,7 @@ from enum import Enum as PyEnum
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -14,24 +15,20 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Uuid,
     func,
     text,
 )
-from sqlalchemy import JSON
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
-
-# Usa tipos nativos PostgreSQL quando disponível, cai para generics em SQLite
-try:
-    from sqlalchemy.dialects.postgresql import JSONB as _JSON_TYPE, UUID as _UUID_TYPE
-except ImportError:
-    _JSON_TYPE = JSON  # type: ignore[misc]
-    _UUID_TYPE = String  # type: ignore[misc]
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
+# Uuid e JSON são tipos agnósticos do SQLAlchemy 2.0 — funcionam com SQLite e PostgreSQL.
+# Uuid(as_uuid=True) → str no SQLite, uuid nativo no PostgreSQL.
+# JSON → TEXT no SQLite, JSONB pode ser configurado via dialect no PostgreSQL se necessário.
 
-# Enums
+
+# ── Enums ─────────────────────────────────────────────────────────────────────
 
 class JobStatus(str, PyEnum):
     PENDING   = "pending"
@@ -61,13 +58,14 @@ class LogLevel(str, PyEnum):
     ERROR    = "ERROR"
     CRITICAL = "CRITICAL"
 
-# Models
+
+# ── Models ────────────────────────────────────────────────────────────────────
 
 class MigrationJob(Base):
     __tablename__ = "migration_jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     table_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     operation: Mapped[OperationType] = mapped_column(
@@ -89,8 +87,8 @@ class MigrationJob(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_seconds: Mapped[float | None] = mapped_column(Float)
 
-    # Config snapshot (what parameters were used)
-    config: Mapped[dict | None] = mapped_column(JSONB)
+    # Config snapshot
+    config: Mapped[dict | None] = mapped_column(JSON)
 
     # Error info
     error_message: Mapped[str | None] = mapped_column(Text)
@@ -121,12 +119,13 @@ class MigrationJob(Base):
         Index("ix_migration_jobs_created_at", "created_at"),
     )
 
+
 class JobLog(Base):
     __tablename__ = "job_logs"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     job_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("migration_jobs.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
@@ -137,37 +136,30 @@ class JobLog(Base):
         Enum(LogLevel), nullable=False, default=LogLevel.INFO, index=True
     )
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    extra: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # Arbitrary structured context
+    extra: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
 
-    # Relationship back to job (optional — log can exist without a job)
     job: Mapped["MigrationJob | None"] = relationship("MigrationJob", back_populates="logs")
 
     __table_args__ = (
         Index("ix_job_logs_job_level", "job_id", "level"),
         Index("ix_job_logs_created_at", "created_at"),
-        # Partial index for errors only — fast error queries
-        Index(
-            "ix_job_logs_errors",
-            "job_id",
-            "created_at",
-            postgresql_where=text("level IN ('ERROR', 'CRITICAL')"),
-        ),
     )
+
 
 class JobPartition(Base):
     __tablename__ = "job_partitions"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("migration_jobs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    partition_key: Mapped[str] = mapped_column(String(64), nullable=False)  # e.g. "2024-03-01"
+    partition_key: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus), nullable=False, default=JobStatus.PENDING
     )
@@ -183,14 +175,15 @@ class JobPartition(Base):
         Index("ix_job_partitions_job_status", "job_id", "status"),
     )
 
+
 class ValidationRun(Base):
     __tablename__ = "validation_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     table_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    triggered_by_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    triggered_by_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
 
     # Count comparison
     oracle_count: Mapped[int | None] = mapped_column(BigInteger)
@@ -200,12 +193,12 @@ class ValidationRun(Base):
 
     # Schema comparison
     schema_match: Mapped[bool | None] = mapped_column(Boolean)
-    schema_diff: Mapped[dict | None] = mapped_column(JSONB)
+    schema_diff: Mapped[dict | None] = mapped_column(JSON)
 
-    # Sample comparison (N rows checked)
+    # Sample comparison
     sample_size: Mapped[int | None] = mapped_column(Integer)
-    sample_match_rate: Mapped[float | None] = mapped_column(Float)  # 0.0 - 1.0
-    sample_diff: Mapped[dict | None] = mapped_column(JSONB)
+    sample_match_rate: Mapped[float | None] = mapped_column(Float)
+    sample_diff: Mapped[dict | None] = mapped_column(JSON)
 
     # Overall result
     passed: Mapped[bool | None] = mapped_column(Boolean)
@@ -232,9 +225,7 @@ class DimensionJob(Base):
     fl_mn: Mapped[str] = mapped_column(String(1), nullable=False, default="1")
     nom_sis_ori: Mapped[str] = mapped_column(String(128), nullable=False, default="ALGAR SOM")
 
-    # Spec JSON completo para reprocessamento
     spec_json: Mapped[dict | None] = mapped_column(JSON)
-    # SQLs gerados (dict com as 6 chaves)
     generated_sqls: Mapped[dict | None] = mapped_column(JSON)
 
     generated_by: Mapped[str] = mapped_column(String(128), default="api")

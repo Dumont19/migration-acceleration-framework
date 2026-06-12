@@ -10,49 +10,88 @@ import html
 import re
 from pathlib import Path
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
+from app.core.constants import (
+    DEFAULT_BUSINESS_KEY,
+    DEFAULT_DIM_SCHEMA,
+    DEFAULT_NOM_SIS_ORI,
+    DEFAULT_SURROGATE_KEY,
+    IGNORED_LINK_PREFIXES,
+    SCD_FL_MN0_COLS,
+    SCD_FL_MN1_COLS,
+)
 from app.core.logging import get_logger
 from .schemas import ColumnSpec, DimensionSpec, LookupSpec
 
 logger = get_logger(__name__)
 
-# Colunas SCD2 padrão fl_mn=1 (Marcia) — usadas para detectar fl_mn
-_FL_MN1_MARKERS = {"IDT_RGT_ATU", "DAT_INI_VIG_RGT", "NOM_SIS_ORI", "DAT_CAR_RGT"}
-# Colunas SCD2 padrão fl_mn=0 (legacy)
-_FL_MN0_MARKERS = {"RECORD_STATUS", "START_DATE", "SRC_SYS_NAME", "D_TIMESTAMP"}
-
-_IGNORED_LINK_PREFIXES = ("rowrej", "nullset", "intervar", "stagevar")
 _SURROGATE_PATTERNS = re.compile(
     r"\b(SEQ_\w+\.NEXTVAL|NEXTVAL\s+FOR\s+\w+|\w+\.NEXTVAL)\b", re.IGNORECASE
 )
 _BSK_PATTERN = re.compile(r"\b(BSK_\w+|TABLE_SRC_KEY)\b", re.IGNORECASE)
+_DELTA_PATTERN = re.compile(r"LAST_LOAD|DAT_ULT|DELTA|INCREMENTAL", re.IGNORECASE)
 
 
 class DimensionSpecExtractor:
-    """
-    Extrai um DimensionSpec a partir de um arquivo .dsx DataStage.
+    """Extrai um :class:`DimensionSpec` a partir de um arquivo .dsx DataStage.
 
-    Uso:
-        spec = DimensionSpecExtractor.from_file(Path("job.dsx"))
-        # ou
-        spec = DimensionSpecExtractor.from_string(xml_content)
+    Analisa o XML/DSX gerado pelo DataStage 11.5 e infere:
+    - Nome do job e tabela alvo
+    - fl_mn pela presença das colunas SCD2
+    - SELECT completo da ODS Oracle
+    - Derivações do transformer (CTransformerStage)
+    - Surrogate key via padrão SEQUENCE.NEXTVAL
+    - Business key via prefixo BSK_
+    - Lookups CHashedFileStage → LookupSpec
+    - Nome do job passado ao PRO_DW_VERSIONA no AfterSQL
+
+    Exemplo::
+
+        spec = DimensionSpecExtractor.from_file(Path("job.dsx")).extract()
+        spec = DimensionSpecExtractor.from_string(xml_content).extract()
     """
 
     def __init__(self, content: str) -> None:
+        """Inicializa o extrator com o conteúdo XML/DSX.
+
+        Args:
+            content: Conteúdo textual do arquivo DSX ou XML exportado do DataStage.
+        """
         self._content = content
         self._soup = BeautifulSoup(content, "xml")
 
     @classmethod
     def from_file(cls, path: Path) -> "DimensionSpecExtractor":
+        """Cria um extrator a partir de um arquivo no disco.
+
+        Args:
+            path: Caminho para o arquivo .dsx ou .xml.
+
+        Returns:
+            Instância pronta para chamar :meth:`extract`.
+        """
         content = path.read_text(encoding="utf-8", errors="ignore")
         return cls(content)
 
     @classmethod
     def from_string(cls, content: str) -> "DimensionSpecExtractor":
+        """Cria um extrator a partir de uma string XML.
+
+        Args:
+            content: Conteúdo XML/DSX como string.
+
+        Returns:
+            Instância pronta para chamar :meth:`extract`.
+        """
         return cls(content)
 
     def extract(self) -> DimensionSpec:
+        """Executa a extração completa e retorna um :class:`DimensionSpec`.
+
+        Returns:
+            Spec preenchido com todos os metadados extraídos do DSX.
+        """
         job_name = self._find_job_name()
         logger.info("Extracting DimensionSpec", job=job_name)
 
@@ -64,10 +103,7 @@ class DimensionSpecExtractor:
         has_row_number = self._detect_row_number()
         nom_sis_ori = self._detect_nom_sis_ori()
 
-        # Delta: heurística — se o SELECT contiver filtro de data incremental
-        is_delta = bool(
-            re.search(r"LAST_LOAD|DAT_ULT|DELTA|INCREMENTAL", source_select, re.IGNORECASE)
-        )
+        is_delta = bool(_DELTA_PATTERN.search(source_select))
 
         spec = DimensionSpec(
             job_name=job_name,
@@ -98,19 +134,33 @@ class DimensionSpecExtractor:
     # ── Private helpers ──────────────────────────────────────────────────────
 
     def _find_job_name(self) -> str:
+        """Extrai o nome do job DataStage do XML.
+
+        Returns:
+            Nome do job ou ``'UNKNOWN_JOB'`` se não encontrado.
+        """
         for elem in self._soup.find_all(["Job", "Record"]):
+            if not isinstance(elem, Tag):
+                continue
             if elem.name == "Job" or elem.get("Type") == "JobDefn":
                 p = elem.find("Property", attrs={"Name": "Name"})
-                if p and p.text.strip():
+                if isinstance(p, Tag) and p.text.strip():
                     return p.text.strip()
         return "UNKNOWN_JOB"
 
     def _find_target_table(self) -> tuple[str, str, str]:
-        """Encontra tabela alvo e schema. Retorna (table, raw_table, schema)."""
-        # Procura OracleConnector/SnowflakeConnector com WriteMode >= 0
+        """Localiza a tabela alvo buscando conectores com modo de escrita.
+
+        Inspeciona OracleConnectorPX e SnowflakeConnectorPX com WriteMode >= 0.
+
+        Returns:
+            Tupla (table, raw_table, schema). Valores padrão se não encontrado.
+        """
         for record in self._soup.find_all("Record"):
+            if not isinstance(record, Tag):
+                continue
             p_type = record.find("Property", attrs={"Name": "StageType"})
-            if not p_type:
+            if not isinstance(p_type, Tag):
                 continue
             stage_type = p_type.text.strip()
             if stage_type not in (
@@ -134,17 +184,22 @@ class DimensionSpecExtractor:
                 full_name = m_table.group(1).strip()
                 parts = full_name.upper().split(".")
                 table = parts[-1]
-                schema_str = ".".join(parts[:-1]) if len(parts) > 1 else "DWDEV.MATHEUSDR"
-                raw_table = f"{table}_RAW"
-                return table, raw_table, schema_str
+                schema_str = ".".join(parts[:-1]) if len(parts) > 1 else DEFAULT_DIM_SCHEMA
+                return table, f"{table}_RAW", schema_str
 
-        return "UNKNOWN_TABLE", "UNKNOWN_TABLE_RAW", "DWDEV.MATHEUSDR"
+        return "UNKNOWN_TABLE", "UNKNOWN_TABLE_RAW", DEFAULT_DIM_SCHEMA
 
     def _find_source_select(self) -> str:
-        """Extrai o SELECT completo da fonte ODS (primeiro OracleConnector em modo leitura)."""
+        """Extrai o SELECT completo da fonte ODS (primeiro conector Oracle em modo leitura).
+
+        Returns:
+            SELECT como string única (espaços normalizados), ou ``''`` se não encontrado.
+        """
         for record in self._soup.find_all("Record"):
+            if not isinstance(record, Tag):
+                continue
             p_type = record.find("Property", attrs={"Name": "StageType"})
-            if not p_type:
+            if not isinstance(p_type, Tag):
                 continue
             if p_type.text.strip() not in (
                 "OracleConnectorPX", "OracleConnector", "PxOracleConnector",
@@ -157,7 +212,7 @@ class DimensionSpecExtractor:
 
             wm = re.search(r"<WriteMode[^>]*>\s*<!\[CDATA\[(\d+)\]\]>", xml_val, re.IGNORECASE)
             if wm and int(wm.group(1)) >= 0:
-                continue  # É write — pula
+                continue  # conector de escrita — ignorar
 
             m_sel = re.search(
                 r"<SelectStatement[^>]*>\s*<!\[CDATA\[(.+?)\]\]>",
@@ -172,23 +227,26 @@ class DimensionSpecExtractor:
     def _parse_transformer(
         self,
     ) -> tuple[list[ColumnSpec], str, str, str]:
-        """
-        Analisa CTransformerStage e extrai:
-        - lista de colunas com derivações
-        - fl_mn detectado
-        - surrogate_key
-        - business_key
+        """Analisa CTransformerStage e extrai colunas, fl_mn, surrogate e business key.
+
+        Varre o código gerado (TrxGenCode) linha a linha usando regex de atribuição.
+        Links com prefixos em :data:`IGNORED_LINK_PREFIXES` são descartados.
+
+        Returns:
+            Tupla (columns, fl_mn, surrogate_key, business_key).
         """
         columns: list[ColumnSpec] = []
-        surrogate_key = "TABLE_KEY"
-        business_key = "TABLE_SRC_KEY"
-        fl_mn = "1"  # padrão
+        surrogate_key = DEFAULT_SURROGATE_KEY
+        business_key = DEFAULT_BUSINESS_KEY
+        fl_mn = "1"
 
         scd_cols_found: set[str] = set()
 
         for record in self._soup.find_all("Record"):
+            if not isinstance(record, Tag):
+                continue
             p_type = record.find("Property", attrs={"Name": "StageType"})
-            if not p_type or p_type.text.strip() != "CTransformerStage":
+            if not isinstance(p_type, Tag) or p_type.text.strip() != "CTransformerStage":
                 continue
 
             trx_code = self._get_trx_gen_code(record)
@@ -205,7 +263,7 @@ class DimensionSpecExtractor:
 
             for m in assign_pat.finditer(trx_code):
                 link, col, expr = m.group(1), m.group(2), m.group(3).strip()
-                if link.lower().startswith(_IGNORED_LINK_PREFIXES):
+                if link.lower().startswith(IGNORED_LINK_PREFIXES):
                     continue
                 expr_clean = re.sub(r"\s+", " ", expr).strip()
                 if col not in col_exprs:
@@ -218,54 +276,54 @@ class DimensionSpecExtractor:
                 exprs = col_exprs[col]
                 deriv = " | ".join(exprs) if len(exprs) > 1 else (exprs[0] if exprs else col)
 
-                # Detectar coluna surrogate (SEQUENCE)
                 if _SURROGATE_PATTERNS.search(deriv):
                     surrogate_key = col
-                # Detectar business key
                 if _BSK_PATTERN.search(col) or _BSK_PATTERN.search(deriv):
                     business_key = col
 
-                # Detectar colunas SCD
                 col_up = col.upper()
-                if col_up in _FL_MN1_MARKERS or col_up in _FL_MN0_MARKERS:
+                if col_up in SCD_FL_MN1_COLS or col_up in SCD_FL_MN0_COLS:
                     scd_cols_found.add(col_up)
 
-                is_scd = col_up in _FL_MN1_MARKERS or col_up in _FL_MN0_MARKERS
+                is_scd = col_up in SCD_FL_MN1_COLS or col_up in SCD_FL_MN0_COLS
                 columns.append(ColumnSpec(name=col, derivation=deriv, is_scd_col=is_scd))
 
-        # Detectar fl_mn pela presença das colunas SCD
-        if scd_cols_found & _FL_MN1_MARKERS:
+        if scd_cols_found & SCD_FL_MN1_COLS:
             fl_mn = "1"
-        elif scd_cols_found & _FL_MN0_MARKERS:
+        elif scd_cols_found & SCD_FL_MN0_COLS:
             fl_mn = "0"
 
         return columns, fl_mn, surrogate_key, business_key
 
     def _find_lookups(self) -> list[LookupSpec]:
-        """Converte CHashedFileStage em LookupSpec (LEFT JOIN com COALESCE)."""
+        """Converte stages CHashedFileStage em :class:`LookupSpec` (LEFT JOIN com COALESCE).
+
+        Returns:
+            Lista de lookups detectados no DSX.
+        """
         lookups: list[LookupSpec] = []
         for record in self._soup.find_all("Record"):
+            if not isinstance(record, Tag):
+                continue
             p_type = record.find("Property", attrs={"Name": "StageType"})
-            if not p_type or p_type.text.strip() != "CHashedFileStage":
+            if not isinstance(p_type, Tag) or p_type.text.strip() != "CHashedFileStage":
                 continue
 
             p_name = record.find("Property", attrs={"Name": "StageName"})
-            stage_name = p_name.text.strip() if p_name else "LOOKUP"
+            stage_name = p_name.text.strip() if isinstance(p_name, Tag) else "LOOKUP"
 
-            # Tentar extrair tabela do hash key
             p_table = record.find("Property", attrs={"Name": "TableName"})
-            lookup_table = p_table.text.strip() if p_table else stage_name
+            lookup_table = p_table.text.strip() if isinstance(p_table, Tag) else stage_name
 
             p_key = record.find("Property", attrs={"Name": "HashKey"})
-            hash_key = p_key.text.strip() if p_key else ""
+            hash_key = p_key.text.strip() if isinstance(p_key, Tag) else ""
 
-            # Colunas de junção e saída
             join_keys: list[str] = []
-            output_col = stage_name
-
             for sub in record.find_all("SubRecord"):
+                if not isinstance(sub, Tag):
+                    continue
                 cn = sub.find("Property", attrs={"Name": "Name"})
-                if cn and cn.text.strip():
+                if isinstance(cn, Tag) and cn.text.strip():
                     join_keys.append(cn.text.strip())
 
             lookups.append(
@@ -274,15 +332,24 @@ class DimensionSpecExtractor:
                     hash_key=hash_key,
                     lookup_table=lookup_table,
                     join_keys=join_keys[:2],
-                    output_col=output_col,
+                    output_col=stage_name,
                     default_value="-1",
                 )
             )
         return lookups
 
     def _find_versiona_job(self, job_name: str) -> str:
-        """Extrai o nome do job passado para PRO_DW_VERSIONA no AfterSQL."""
+        """Extrai o nome do job passado para PRO_DW_VERSIONA no AfterSQL.
+
+        Args:
+            job_name: Nome do job DataStage usado como fallback.
+
+        Returns:
+            Nome encontrado no AfterSQL, ou ``job_name`` se ausente.
+        """
         for record in self._soup.find_all("Record"):
+            if not isinstance(record, Tag):
+                continue
             xml_val = self._get_xml_properties(record)
             if not xml_val:
                 continue
@@ -293,7 +360,6 @@ class DimensionSpecExtractor:
             )
             if m:
                 after = m.group(1)
-                # Procura CALL PRO_DW_VERSIONA(..., 'NOME_JOB', ...)
                 mj = re.search(
                     r"PRO_DW_VERSIONA\s*\([^)]*'([^']+)'", after, re.IGNORECASE
                 )
@@ -302,12 +368,23 @@ class DimensionSpecExtractor:
         return job_name
 
     def _detect_row_number(self) -> bool:
-        """Detecta se há lógica de deduplicação via ROW_NUMBER/QUALIFY no XML."""
+        """Detecta lógica de deduplicação via ROW_NUMBER/QUALIFY no conteúdo do XML.
+
+        Returns:
+            True se ROW_NUMBER ou QUALIFY estiver presente no XML.
+        """
         content_upper = self._content.upper()
         return "ROW_NUMBER" in content_upper or "QUALIFY" in content_upper
 
     def _detect_nom_sis_ori(self) -> str:
-        """Detecta o valor de NOM_SIS_ORI/SRC_SYS_NAME no transformer."""
+        """Detecta o valor de NOM_SIS_ORI ou SRC_SYS_NAME no transformer.
+
+        Primeiro tenta encontrar a atribuição explícita no XML. Caso não encontre,
+        aplica heurística: presença da palavra SOM indica 'ALGAR SOM'.
+
+        Returns:
+            Valor detectado, ou :data:`DEFAULT_NOM_SIS_ORI` como fallback.
+        """
         m = re.search(
             r"(?:NOM_SIS_ORI|SRC_SYS_NAME)\s*=\s*['\"]([^'\"]+)['\"]",
             self._content,
@@ -315,26 +392,53 @@ class DimensionSpecExtractor:
         )
         if m:
             return m.group(1).strip()
-        # Heurística para jobs SOM
-        if re.search(r"\bSOM\b", self._content, re.IGNORECASE):
-            return "ALGAR SOM"
-        return "ALGAR SOM"
+        return DEFAULT_NOM_SIS_ORI
 
-    def _get_xml_properties(self, record) -> str | None:
+    def _get_xml_properties(self, record: Tag) -> str | None:
+        """Extrai o bloco XMLProperties de um Record DataStage.
+
+        Args:
+            record: Tag BeautifulSoup representando um Record DataStage.
+
+        Returns:
+            Conteúdo XML do bloco de propriedades, ou ``None`` se ausente.
+        """
         for sub in record.find_all("SubRecord"):
+            if not isinstance(sub, Tag):
+                continue
             name_prop = sub.find("Property", attrs={"Name": "Name"})
             val_prop = sub.find("Property", attrs={"Name": "Value"})
-            if name_prop and val_prop and name_prop.text == "XMLProperties":
+            if (
+                isinstance(name_prop, Tag)
+                and isinstance(val_prop, Tag)
+                and name_prop.text == "XMLProperties"
+            ):
                 return html.unescape(val_prop.text or "")
         for prop in record.find_all("Property"):
+            if not isinstance(prop, Tag):
+                continue
             if prop.get("Name") == "Value" and prop.text and "SelectStatement" in prop.text:
                 return html.unescape(prop.text)
         return None
 
-    def _get_trx_gen_code(self, record) -> str | None:
+    def _get_trx_gen_code(self, record: Tag) -> str | None:
+        """Extrai o bloco TrxGenCode (código do transformer) de um Record.
+
+        Args:
+            record: Tag BeautifulSoup representando um Record CTransformerStage.
+
+        Returns:
+            Código gerado como string, ou ``None`` se ausente.
+        """
         for sub in record.find_all("SubRecord"):
+            if not isinstance(sub, Tag):
+                continue
             name_prop = sub.find("Property", attrs={"Name": "Name"})
             val_prop = sub.find("Property", attrs={"Name": "Value"})
-            if name_prop and val_prop and name_prop.text.strip() == "TrxGenCode":
+            if (
+                isinstance(name_prop, Tag)
+                and isinstance(val_prop, Tag)
+                and name_prop.text.strip() == "TrxGenCode"
+            ):
                 return val_prop.text or ""
         return None

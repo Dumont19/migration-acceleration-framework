@@ -8,11 +8,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class OracleSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ORACLE_", env_file=".env", extra="ignore")
 
-    host: str = Field(..., description="Oracle DB hostname or IP")
+    host: str | None = Field(None, description="Oracle DB hostname or IP")
     port: int = Field(1521, description="Oracle listener port")
-    service: str = Field(..., description="Oracle service name")
-    user: str = Field(..., description="Oracle username")
-    password: SecretStr = Field(..., description="Oracle password")
+    service: str | None = Field(None, description="Oracle service name")
+    user: str | None = Field(None, description="Oracle username")
+    password: SecretStr | None = Field(None, description="Oracle password")
     schema_name: str = Field("DWADM", alias="ORACLE_SCHEMA", description="Source schema")
     pool_min: int = Field(2, description="Minimum connection pool size")
     pool_max: int = Field(10, description="Maximum connection pool size")
@@ -22,8 +22,8 @@ class OracleSettings(BaseSettings):
 class SnowflakeSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SNOWFLAKE_", env_file=".env", extra="ignore")
 
-    account: str = Field(..., description="Snowflake account identifier")
-    user: str = Field(..., description="Snowflake username (SSO email)")
+    account: str | None = Field(None, description="Snowflake account identifier")
+    user: str | None = Field(None, description="Snowflake username (SSO email)")
     role: str = Field("SYSADMIN", description="Snowflake role")
     warehouse: str = Field("WH_COMPUTE", description="Snowflake warehouse")
     database: str = Field("DWDEV", description="Target database")
@@ -36,10 +36,10 @@ class SnowflakeSettings(BaseSettings):
 class S3Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AWS_", env_file=".env", extra="ignore")
 
-    access_key_id: SecretStr = Field(..., alias="AWS_ACCESS_KEY_ID")
-    secret_access_key: SecretStr = Field(..., alias="AWS_SECRET_ACCESS_KEY")
+    access_key_id: SecretStr | None = Field(None, alias="AWS_ACCESS_KEY_ID")
+    secret_access_key: SecretStr | None = Field(None, alias="AWS_SECRET_ACCESS_KEY")
     region: str = Field("us-east-1", alias="AWS_REGION")
-    bucket: str = Field(..., alias="S3_BUCKET", description="Migration staging bucket")
+    bucket: str | None = Field(None, alias="S3_BUCKET", description="Migration staging bucket")
     prefix: str = Field("migration/", alias="S3_PREFIX", description="Key prefix for uploaded files")
 
 
@@ -54,6 +54,11 @@ class DatabaseSettings(BaseSettings):
     @property
     def url(self) -> str:
         return f"sqlite+aiosqlite:///{self.db_path}"
+
+    @property
+    def sync_url(self) -> str:
+        """URL síncrona para Alembic (que não suporta drivers async)."""
+        return f"sqlite:///{self.db_path}"
 
     @property
     def is_sqlite(self) -> bool:
