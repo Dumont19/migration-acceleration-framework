@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import datastage, health, logs, migration
+from app.api.routes import datastage, dimension, health, logs, migration, tools
 from app.core.config import get_settings
 from app.core.database import close_db_engine, init_db_engine
 from app.core.logging import configure_logging, get_logger
@@ -87,11 +87,13 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-    # Routers 
+    # Routers
     app.include_router(health.router)
     app.include_router(migration.router)
     app.include_router(logs.router)
     app.include_router(datastage.router)
+    app.include_router(tools.router)
+    app.include_router(dimension.router)
 
     # Global exception handler 
     @app.exception_handler(Exception)

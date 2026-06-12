@@ -15,13 +15,22 @@ class Base(DeclarativeBase):
 
 def _create_engine():
     settings = get_settings()
+    db = settings.db
+    if db.is_sqlite:
+        from sqlalchemy.pool import StaticPool
+        return create_async_engine(
+            db.url,
+            echo=db.echo_sql,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
     return create_async_engine(
-        settings.db.url,
-        pool_size=settings.db.pool_size,
-        max_overflow=settings.db.max_overflow,
-        echo=settings.db.echo_sql,
-        pool_pre_ping=True,          # Drop stale connections automatically
-        pool_recycle=3600,           # Recycle connections every hour
+        db.url,
+        pool_size=db.pool_size,
+        max_overflow=db.max_overflow,
+        echo=db.echo_sql,
+        pool_pre_ping=True,
+        pool_recycle=3600,
     )
 
 # Module-level singletons — created once at startup via lifespan

@@ -22,6 +22,7 @@ MAF is a full-stack internal tooling platform that accelerates and documents Ora
 - **Lineage graph** — interactive SOURCE → JOB → TARGET visualization from DataStage XML
 - **Standalone tools** — extract Oracle metadata, create Snowflake tables, run COPY INTO and MERGE independently
 - **Persistent audit trail** — all execution events stored in PostgreSQL, queryable via the UI
+- **Dimension migration** — análise automática de DSX DataStage, geração dos 6 SQLs SCD2 e queries de homologação MINUS DEV vs PROD
 
 ---
 
@@ -142,6 +143,7 @@ migration-acceleration-framework/
 │   │   │   │   ├── migration.py     # POST /api/migration/start, job CRUD
 │   │   │   │   ├── datastage.py     # POST /api/datastage/analyze, /report, /lineage
 │   │   │   │   ├── tools.py         # GET /api/tools/metadata, POST /create-table, /copy-into, /merge
+│   │   │   │   ├── dimension.py     # POST /api/dimension/analyze, /generate, /homologate; GET /jobs
 │   │   │   │   ├── logs.py          # GET /api/logs (paginated audit trail)
 │   │   │   │   └── health.py        # GET /api/health (parallel connection check)
 │   │   │   └── ws/
@@ -162,12 +164,20 @@ migration-acceleration-framework/
 │   │       │   └── state.py         # Job state management
 │   │       ├── validation/
 │   │       │   └── comparator.py    # Oracle vs Snowflake: counts + schema + sample
-│   │       └── datastage/
-│   │           ├── xml_analyzer.py  # DataStage XML parser
-│   │           └── xml_parser.py    # Lineage graph builder
+│   │       ├── tools/
+│   │       │   └── ddl_service.py   # oracle_to_snowflake_type, build_ddl, run_copy_into, run_merge
+│   │       ├── datastage/
+│   │       │   ├── xml_analyzer.py  # DataStage XML parser
+│   │       │   └── xml_parser.py    # Lineage graph builder
+│   │       └── dimension/           # Módulo de migração de dimensões SCD2
+│   │           ├── schemas.py       # DimensionSpec, ColumnSpec, LookupSpec
+│   │           ├── extractor.py     # DimensionSpecExtractor (parse DSX)
+│   │           ├── generator.py     # DimensionSqlGenerator (gera 6 SQLs)
+│   │           └── homologator.py   # DimensionHomologator (MINUS DEV vs PROD)
 │   ├── migrations/
 │   │   └── versions/
-│   │       └── 0001_initial.py
+│   │       ├── 0001_initial.py
+│   │       └── 0002_dimension_jobs.py
 │   └── pyproject.toml
 │
 ├── frontend/
@@ -182,7 +192,8 @@ migration-acceleration-framework/
 │       │   ├── validation/page.tsx  # /06  → Oracle vs Snowflake validation
 │       │   ├── tools/page.tsx       # /07  → Standalone tools
 │       │   ├── logs/page.tsx        # /08  → Audit logs
-│       │   └── settings/page.tsx    # /09  → Connection configuration
+│       │   ├── dimension/page.tsx   # /09  → Dimension migration (SCD2)
+│       │   └── settings/page.tsx    # /10  → Connection configuration
 │       ├── components/
 │       │   ├── layout/
 │       │   │   ├── Sidebar.tsx
@@ -239,7 +250,32 @@ Standalone operational utilities, independent of the migration pipeline:
 ### /08 Audit Logs
 Persistent execution history stored in PostgreSQL. Filter by level (INFO / WARN / ERROR), table name, free-text search and date range.
 
-### /09 Settings
+### /09 Dimension Migration (SCD2)
+Módulo completo para migração de tabelas de dimensão DataStage → Snowflake:
+
+**Aba 01 — Upload:** Upload de arquivo `.dsx`/`.xml` exportado do DataStage. O sistema extrai automaticamente:
+- Nome do job e tabela alvo
+- `fl_mn` detectado via presença de `IDT_RGT_ATU` (Marcia) ou `RECORD_STATUS` (legacy)
+- SELECT completo da ODS source
+- Colunas com derivações DataStage → SQL
+- Surrogate key (SEQUENCE) e business key
+- Lookups `CHashedFileStage` convertidos para `LEFT JOIN ... COALESCE(..., -1)`
+
+**Aba 02 — Gerar SQL:** Gera os 6 SQLs na ordem correta:
+1. `CREATE OR REPLACE TRANSIENT TABLE ... _RAW`
+2. `CREATE OR REPLACE SEQUENCE SEQ_...`
+3. `CREATE TABLE IF NOT EXISTS ...` (tabela DIM final com colunas SCD2)
+4. `MERGE INTO DWDEV.HUGOA.DW_VERSIONA` (config do job)
+5. `CREATE OR REPLACE PROCEDURE PRO_...` (TRUNCATE + INSERT + CALL PRO_DW_VERSIONA)
+6. `CREATE OR REPLACE TASK TSK_...` + `ALTER TASK SUSPEND`
+
+Cada SQL tem botão de cópia individual.
+
+**Aba 03 — Homologação:** Gera queries MINUS, COUNT por data e divergência de campos para validar DEV vs PROD. Suporte a Time Travel (`AT OFFSET -N`).
+
+**Aba 04 — Histórico:** Lista todos os jobs de dimensão gerados com paginação.
+
+### /10 Settings
 Live connection health check for all four services (Oracle, Snowflake, S3, PostgreSQL) with latency display. Configuration is managed via the `.env` file.
 
 ---
@@ -300,6 +336,10 @@ S3_PREFIX=migration/
 | `POST` | `/api/tools/merge` | MERGE RAW → Final |
 | `GET` | `/api/logs` | Paginated audit log query |
 | `GET` | `/api/logs/stats` | Log statistics |
+| `POST` | `/api/dimension/analyze` | Parse DSX → DimensionSpec JSON |
+| `POST` | `/api/dimension/generate` | DimensionSpec → 6 SQLs SCD2 |
+| `POST` | `/api/dimension/homologate` | DimensionSpec → MINUS queries DEV vs PROD |
+| `GET` | `/api/dimension/jobs` | Histórico de jobs de dimensão |
 
 Full interactive docs at `http://localhost:8000/docs`.
 

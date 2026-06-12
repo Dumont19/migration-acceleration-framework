@@ -14,7 +14,8 @@ const NAV_ITEMS = [
   { href: '/validation', label: 'validation',   prefix: '/06' },
   { href: '/tools',      label: 'tools',        prefix: '/07' },
   { href: '/logs',       label: 'audit_logs',   prefix: '/08' },
-  { href: '/settings',   label: 'settings',     prefix: '/09' },
+  { href: '/dimension',  label: 'dim_migration',prefix: '/09' },
+  { href: '/settings',   label: 'settings',     prefix: '/10' },
 ]
 
 export function Sidebar() {

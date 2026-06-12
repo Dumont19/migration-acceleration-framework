@@ -1,0 +1,202 @@
+"""
+api/routes/dimension.py
+--------------------------
+Endpoints para migração de dimensões SCD2 (DataStage → Snowflake).
+
+Routes:
+  POST /api/dimension/analyze      → recebe XML, retorna DimensionSpec
+  POST /api/dimension/generate     → recebe DimensionSpec, retorna 6 SQLs
+  POST /api/dimension/homologate   → recebe spec + PROD table, retorna MINUS queries
+  GET  /api/dimension/jobs         → lista jobs de dimensão registrados
+"""
+from __future__ import annotations
+
+import tempfile
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db_session
+from app.core.logging import get_logger
+from app.models.logs import DimensionJob
+from app.services.dimension import (
+    DimensionHomologator,
+    DimensionSpec,
+    DimensionSpecExtractor,
+    DimensionSqlGenerator,
+)
+
+router = APIRouter(prefix="/api/dimension", tags=["dimension"])
+logger = get_logger(__name__)
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+async def _resolve_xml(file: UploadFile | None, xml_content: str | None) -> str:
+    if file and file.filename:
+        data = await file.read()
+        return data.decode("utf-8", errors="replace")
+    if xml_content:
+        return xml_content
+    raise HTTPException(
+        status_code=422,
+        detail="Envie um arquivo .dsx/.xml no campo 'file' ou o XML no campo 'xml_content'.",
+    )
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.post("/analyze", response_model=dict, status_code=status.HTTP_200_OK)
+async def analyze_dimension_xml(
+    file: UploadFile | None = File(None, description="Arquivo .dsx ou .xml"),
+    xml_content: str | None = Form(None, description="XML como texto (fallback)"),
+):
+    """
+    Analisa um arquivo DSX e extrai o DimensionSpec completo:
+    job_name, tabela alvo, fl_mn, SELECT ODS, colunas, lookups, surrogate/business key.
+    """
+    content = await _resolve_xml(file, xml_content)
+    try:
+        extractor = DimensionSpecExtractor.from_string(content)
+        spec = extractor.extract()
+    except Exception as exc:
+        logger.error("DimensionSpec extraction failed", error=str(exc))
+        raise HTTPException(
+            status_code=422, detail=f"Erro ao analisar XML: {exc}"
+        ) from exc
+
+    return spec.model_dump()
+
+
+@router.post("/generate", response_model=dict, status_code=status.HTTP_200_OK)
+async def generate_dimension_sql(
+    spec_data: dict,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Recebe um DimensionSpec (JSON) e gera os 6 SQLs na ordem correta.
+    Persiste o registro no banco para histórico.
+    """
+    try:
+        spec = DimensionSpec.model_validate(spec_data)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422, detail=f"DimensionSpec inválido: {exc}"
+        ) from exc
+
+    try:
+        generator = DimensionSqlGenerator(spec)
+        sqls = generator.generate_all()
+    except Exception as exc:
+        logger.error("SQL generation failed", job=spec.job_name, error=str(exc))
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao gerar SQL: {exc}"
+        ) from exc
+
+    # Persistir no banco
+    try:
+        job_record = DimensionJob(
+            job_name=spec.job_name,
+            target_table=spec.target_table,
+            schema=spec.schema,
+            fl_mn=spec.fl_mn,
+            nom_sis_ori=spec.nom_sis_ori,
+            spec_json=spec.model_dump(),
+            generated_sqls=sqls,
+        )
+        db.add(job_record)
+        await db.commit()
+        await db.refresh(job_record)
+        job_id = job_record.id
+    except Exception as exc:
+        logger.warning("Failed to persist dimension job record", error=str(exc))
+        job_id = None
+
+    logger.info("Dimension SQLs generated", job=spec.job_name, table=spec.target_table)
+    return {
+        "job_name": spec.job_name,
+        "target_table": spec.target_table,
+        "fl_mn": spec.fl_mn,
+        "record_id": job_id,
+        "sqls": sqls,
+    }
+
+
+@router.post("/homologate", response_model=dict, status_code=status.HTTP_200_OK)
+async def generate_homologation_queries(
+    spec_data: dict,
+    prod_table: str = Form(..., description="Nome completo da tabela PROD (ex: DWADM.D_TABELA)"),
+    time_travel_offset: int = Form(
+        0,
+        description="Offset Time Travel em segundos (negativo, ex: -3600 para 1h atrás). 0 = sem Time Travel.",
+    ),
+):
+    """
+    Gera queries MINUS, COUNT por data e divergência de campos para
+    homologação DEV vs PROD da tabela de dimensão.
+    """
+    try:
+        spec = DimensionSpec.model_validate(spec_data)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422, detail=f"DimensionSpec inválido: {exc}"
+        ) from exc
+
+    if time_travel_offset > 0:
+        raise HTTPException(
+            status_code=422,
+            detail="time_travel_offset deve ser 0 ou negativo (ex: -3600).",
+        )
+
+    homologator = DimensionHomologator(
+        spec=spec,
+        prod_table=prod_table,
+        time_travel_offset=time_travel_offset,
+    )
+    queries = homologator.generate()
+
+    logger.info(
+        "Homologation queries generated",
+        job=spec.job_name,
+        prod_table=prod_table,
+        time_travel=time_travel_offset,
+    )
+    return {
+        "dev_table": f"{spec.schema}.{spec.target_table}",
+        "prod_table": prod_table,
+        "time_travel_offset": time_travel_offset,
+        "queries": queries,
+    }
+
+
+@router.get("/jobs", response_model=list[dict])
+async def list_dimension_jobs(
+    table_name: str | None = Query(None, description="Filtrar por tabela alvo"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=5, le=100),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Lista jobs de dimensão registrados com paginação."""
+    query = select(DimensionJob).order_by(DimensionJob.created_at.desc())
+    if table_name:
+        query = query.where(DimensionJob.target_table == table_name.upper())
+
+    offset = (page - 1) * page_size
+    query = query.offset(offset).limit(page_size)
+    result = await db.execute(query)
+    jobs = result.scalars().all()
+
+    return [
+        {
+            "id": j.id,
+            "job_name": j.job_name,
+            "target_table": j.target_table,
+            "schema": j.schema,
+            "fl_mn": j.fl_mn,
+            "nom_sis_ori": j.nom_sis_ori,
+            "created_at": j.created_at.isoformat() if j.created_at else None,
+        }
+        for j in jobs
+    ]

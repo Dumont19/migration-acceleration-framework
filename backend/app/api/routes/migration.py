@@ -16,7 +16,7 @@ Routes:
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.ws.progress import handle_progress_websocket, ws_manager
@@ -84,13 +84,19 @@ async def list_jobs(
     if job_status:
         query = query.where(MigrationJob.status == job_status)
 
-    count_query = select(MigrationJob).where(True)
     offset = (page - 1) * page_size
-    query = query.offset(offset).limit(page_size)
 
+    count_q = select(func.count()).select_from(MigrationJob)
+    if table_name:
+        count_q = count_q.where(MigrationJob.table_name == table_name.upper())
+    if job_status:
+        count_q = count_q.where(MigrationJob.status == job_status)
+    total_result = await db.execute(count_q)
+    total = total_result.scalar_one()
+
+    query = query.offset(offset).limit(page_size)
     result = await db.execute(query)
     jobs = result.scalars().all()
-    total = len(jobs) + offset  # Approximate — good enough for UI
 
     return JobListResponse(
         items=[

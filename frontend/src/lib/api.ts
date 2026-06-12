@@ -319,4 +319,85 @@ export const healthApi = {
   database:  () => request<ConnectionHealth>('/api/health/database'),
 }
 
+// ── Dimension ─────────────────────────────────────────────────────────────────
+
+export interface ColumnSpec {
+  name: string
+  derivation: string
+  is_scd_col: boolean
+}
+
+export interface LookupSpec {
+  stage_name: string
+  hash_key: string
+  lookup_table: string
+  join_keys: string[]
+  output_col: string
+  default_value: string
+}
+
+export interface DimensionSpec {
+  job_name: string
+  target_table: string
+  raw_table: string
+  schema: string
+  fl_mn: '0' | '1'
+  source_select: string
+  source_schema: string
+  columns: ColumnSpec[]
+  surrogate_key: string
+  business_key: string
+  lookups: LookupSpec[]
+  versiona_job_name: string
+  has_row_number: boolean
+  nom_sis_ori: string
+  is_delta: boolean
+}
+
+export interface DimensionGenerateResult {
+  job_name: string
+  target_table: string
+  fl_mn: string
+  record_id: number | null
+  sqls: Record<string, string>
+}
+
+export interface DimensionHomologateResult {
+  dev_table: string
+  prod_table: string
+  time_travel_offset: number
+  queries: Record<string, string>
+}
+
+export interface DimensionJobSummary {
+  id: number
+  job_name: string
+  target_table: string
+  schema: string
+  fl_mn: string
+  nom_sis_ori: string
+  created_at: string
+}
+
+export const dimensionApi = {
+  analyze: (form: FormData) =>
+    requestForm<DimensionSpec>('/api/dimension/analyze', form),
+
+  generate: (spec: DimensionSpec) =>
+    request<DimensionGenerateResult>('/api/dimension/generate', {
+      method: 'POST',
+      body: JSON.stringify(spec),
+    }),
+
+  homologate: (form: FormData) =>
+    requestForm<DimensionHomologateResult>('/api/dimension/homologate', form),
+
+  listJobs: (params?: { table_name?: string; page?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.table_name) qs.set('table_name', params.table_name)
+    if (params?.page)       qs.set('page', String(params.page))
+    return request<DimensionJobSummary[]>(`/api/dimension/jobs?${qs}`)
+  },
+}
+
 export { ApiError }

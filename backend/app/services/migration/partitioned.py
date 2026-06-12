@@ -191,45 +191,16 @@ class PartitionedMigrationService:
     async def _copy_into_snowflake(
         self, table: str, schema: str, s3_key: str, columns: list[str]
     ) -> None:
-        from sqlalchemy import text
-        settings_s3 = __import__(
-            "app.core.config", fromlist=["get_settings"]
-        ).get_settings().s3
-        full_s3_path = f"s3://{settings_s3.bucket}/{settings_s3.prefix}{s3_key}"
-        col_list = ", ".join(columns)
-        sql = f"""
-            COPY INTO {schema}.{table} ({col_list})
-            FROM '{full_s3_path}'
-            CREDENTIALS = (
-                AWS_KEY_ID = '{settings_s3.access_key_id.get_secret_value()}'
-                AWS_SECRET_KEY = '{settings_s3.secret_access_key.get_secret_value()}'
-            )
-            FILE_FORMAT = (TYPE = 'CSV' SKIP_HEADER = 1 FIELD_OPTIONALLY_ENCLOSED_BY = '"')
-            ON_ERROR = 'CONTINUE'
-        """
-        engine = get_snowflake_engine()
-        async with engine.connect() as conn:
-            await conn.execute(text(sql))
-            await conn.commit()
+        from app.services.tools.ddl_service import run_copy_into
+        # table já vem como "{table}_RAW" do chamador; extrair nome base
+        base_table = table.removesuffix("_RAW")
+        await run_copy_into(table=base_table, schema=schema, s3_key=s3_key, columns=columns)
 
     async def _run_merge(
         self, table: str, schema: str, partition_col: str, date_from: str
     ) -> None:
-        from sqlalchemy import text
-        sql = f"""
-            MERGE INTO {schema}.{table} AS tgt
-            USING (
-                SELECT * FROM {schema}.{table}_RAW
-                WHERE {partition_col} = TO_DATE('{date_from}', 'YYYY-MM-DD')
-            ) AS src
-            ON tgt.ID = src.ID
-            WHEN MATCHED THEN UPDATE SET tgt.UPDATED_AT = src.UPDATED_AT
-            WHEN NOT MATCHED THEN INSERT VALUES (src.*)
-        """
-        engine = get_snowflake_engine()
-        async with engine.connect() as conn:
-            await conn.execute(text(sql))
-            await conn.commit()
+        from app.services.tools.ddl_service import run_merge
+        await run_merge(table=table, schema=schema, partition_col=partition_col, date_from=date_from)
 
     def _build_partition_list(self, request: MigrationRequest) -> list[dict]:
         partitions = []

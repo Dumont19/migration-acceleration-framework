@@ -17,7 +17,15 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import JSON
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+
+# Usa tipos nativos PostgreSQL quando disponível, cai para generics em SQLite
+try:
+    from sqlalchemy.dialects.postgresql import JSONB as _JSON_TYPE, UUID as _UUID_TYPE
+except ImportError:
+    _JSON_TYPE = JSON  # type: ignore[misc]
+    _UUID_TYPE = String  # type: ignore[misc]
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -209,4 +217,31 @@ class ValidationRun(Base):
 
     __table_args__ = (
         Index("ix_validation_runs_table_created", "table_name", "created_at"),
+    )
+
+
+class DimensionJob(Base):
+    """Registro de jobs de dimensão gerados pelo módulo de migração de dimensões."""
+
+    __tablename__ = "dimension_jobs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    job_name: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    target_table: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    schema: Mapped[str] = mapped_column(String(128), nullable=False, default="DWDEV.MATHEUSDR")
+    fl_mn: Mapped[str] = mapped_column(String(1), nullable=False, default="1")
+    nom_sis_ori: Mapped[str] = mapped_column(String(128), nullable=False, default="ALGAR SOM")
+
+    # Spec JSON completo para reprocessamento
+    spec_json: Mapped[dict | None] = mapped_column(JSON)
+    # SQLs gerados (dict com as 6 chaves)
+    generated_sqls: Mapped[dict | None] = mapped_column(JSON)
+
+    generated_by: Mapped[str] = mapped_column(String(128), default="api")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+    __table_args__ = (
+        Index("ix_dimension_jobs_table_created", "target_table", "created_at"),
     )

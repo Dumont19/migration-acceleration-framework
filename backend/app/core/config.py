@@ -44,11 +44,20 @@ class S3Settings(BaseSettings):
 
 
 class DatabaseSettings(BaseSettings):
-    db_path: str = Field("./maf.db", alias = "DB_PATH")    
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    db_path: str = Field("./maf.db", alias="DB_PATH")
+    pool_size: int = Field(5, alias="DB_POOL_SIZE")
+    max_overflow: int = Field(10, alias="DB_MAX_OVERFLOW")
+    echo_sql: bool = Field(False, alias="DB_ECHO_SQL")
 
     @property
     def url(self) -> str:
         return f"sqlite+aiosqlite:///{self.db_path}"
+
+    @property
+    def is_sqlite(self) -> bool:
+        return "sqlite" in self.url
 
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
