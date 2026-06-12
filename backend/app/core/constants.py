@@ -11,6 +11,7 @@ Sem imports de terceiros — apenas Python stdlib.
 SCD_FL_MN1_MAP: dict[str, str] = {
     "active_flag": "IDT_RGT_ATU",
     "start_date":  "DAT_INI_VIG_RGT",
+    "end_date":    "DAT_FIM_VIG_RGT",
     "sys_name":    "NOM_SIS_ORI",
     "load_date":   "DAT_CAR_RGT",
 }
@@ -19,6 +20,7 @@ SCD_FL_MN1_MAP: dict[str, str] = {
 SCD_FL_MN0_MAP: dict[str, str] = {
     "active_flag": "RECORD_STATUS",
     "start_date":  "START_DATE",
+    "end_date":    "END_DATE",
     "sys_name":    "SRC_SYS_NAME",
     "load_date":   "D_TIMESTAMP",
 }
@@ -29,6 +31,11 @@ SCD_FL_MN1_COLS: frozenset[str] = frozenset(SCD_FL_MN1_MAP.values())
 #: Conjunto de colunas fl_mn=0 — usado para detecção automática no DSX
 SCD_FL_MN0_COLS: frozenset[str] = frozenset(SCD_FL_MN0_MAP.values())
 
+#: Todas as colunas SCD2 de controle (ambos fl_mn) — para exclusão de QTD_DIF_CAM
+SCD2_ALL_CONTROL_COLS: frozenset[str] = frozenset(
+    set(SCD_FL_MN1_MAP.values()) | set(SCD_FL_MN0_MAP.values())
+)
+
 # ── Snowflake — schemas e objetos de controle ─────────────────────────────────
 
 #: Schema padrão para tabelas de dimensão geradas
@@ -36,6 +43,12 @@ DEFAULT_DIM_SCHEMA: str = "DWDEV.MATHEUSDR"
 
 #: Schema padrão da ODS Oracle / Snowflake de origem
 DEFAULT_SRC_SCHEMA: str = "DWDEV"
+
+#: Schema Snowflake de produção (fonte para Time Travel na criação da tabela DIM)
+PROD_SF_SCHEMA: str = "DWDEV.DWADM"
+
+#: Schema Oracle de produção (fonte de colunas para DDL)
+PROD_ORACLE_SCHEMA: str = "DWADM"
 
 #: Tabela de controle SCD2 (DW_VERSIONA)
 DW_VERSIONA_TABLE: str = "DWDEV.HUGOA.DW_VERSIONA"

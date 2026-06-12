@@ -5,7 +5,7 @@ Endpoints para migração de dimensões SCD2 (DataStage → Snowflake).
 
 Routes:
   POST /api/dimension/analyze      → recebe XML, retorna DimensionSpec
-  POST /api/dimension/generate     → recebe DimensionSpec, retorna 6 SQLs
+  POST /api/dimension/generate     → recebe DimensionSpec, retorna 5 SQLs (Oracle-first)
   POST /api/dimension/homologate   → recebe spec + PROD table, retorna MINUS queries
   GET  /api/dimension/jobs         → lista jobs de dimensão registrados
 """
@@ -27,6 +27,8 @@ from app.services.dimension import (
     DimensionSpec,
     DimensionSpecExtractor,
     DimensionSqlGenerator,
+    fetch_dim_columns,
+    fetch_dim_constraints,
 )
 
 router = APIRouter(prefix="/api/dimension", tags=["dimension"])
@@ -77,7 +79,10 @@ async def generate_dimension_sql(
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    Recebe um DimensionSpec (JSON) e gera os 6 SQLs na ordem correta.
+    Recebe um DimensionSpec (JSON) e gera os 5 SQLs na ordem correta.
+
+    REGRA ABSOLUTA: busca colunas do Oracle antes de gerar qualquer SQL.
+    Se Oracle indisponível, gera com inferência do DataStage (com aviso).
     Persiste o registro no banco para histórico.
     """
     try:
@@ -86,6 +91,36 @@ async def generate_dimension_sql(
         raise HTTPException(
             status_code=422, detail=f"DimensionSpec inválido: {exc}"
         ) from exc
+
+    # Buscar colunas do Oracle (fonte obrigatória para DDL)
+    oracle_cols = []
+    oracle_cons = []
+    try:
+        oracle_cols = await fetch_dim_columns(spec.oracle_schema, spec.target_table)
+        oracle_cons = await fetch_dim_constraints(spec.oracle_schema, spec.target_table)
+        if not oracle_cols:
+            logger.warning(
+                "Oracle returned 0 columns — table may not exist in schema",
+                schema=spec.oracle_schema,
+                table=spec.target_table,
+            )
+        else:
+            logger.info(
+                "Oracle columns fetched",
+                table=spec.target_table,
+                count=len(oracle_cols),
+            )
+    except Exception as exc:
+        logger.warning(
+            "Oracle fetch failed — generating with DataStage inference",
+            error=str(exc),
+            table=spec.target_table,
+        )
+
+    spec = spec.model_copy(update={
+        "oracle_columns": oracle_cols,
+        "oracle_constraints": oracle_cons,
+    })
 
     try:
         generator = DimensionSqlGenerator(spec)
