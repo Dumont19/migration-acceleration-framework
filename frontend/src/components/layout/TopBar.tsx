@@ -15,6 +15,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/validation': '// validation — oracle vs snowflake comparison',
   '/tools':      '// tools — metadata · create table · copy into · merge',
   '/logs':       '// audit_logs — persistent execution history',
+  '/dimension':  '// dim_migration — scd2 dimension generator',
   '/settings':   '// settings — connection configuration',
 }
 

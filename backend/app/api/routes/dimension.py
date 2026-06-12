@@ -11,6 +11,7 @@ Routes:
 """
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -126,7 +127,7 @@ async def generate_dimension_sql(
 
 @router.post("/homologate", response_model=dict, status_code=status.HTTP_200_OK)
 async def generate_homologation_queries(
-    spec_data: dict,
+    spec_json: str = Form(..., description="DimensionSpec serializado como JSON"),
     prod_table: str = Form(..., description="Nome completo da tabela PROD (ex: DWADM.D_TABELA)"),
     time_travel_offset: int = Form(
         0,
@@ -138,7 +139,7 @@ async def generate_homologation_queries(
     homologação DEV vs PROD da tabela de dimensão.
     """
     try:
-        spec = DimensionSpec.model_validate(spec_data)
+        spec = DimensionSpec.model_validate(json.loads(spec_json))
     except Exception as exc:
         raise HTTPException(
             status_code=422, detail=f"DimensionSpec inválido: {exc}"

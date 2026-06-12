@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import type { DimensionSpec } from '@/lib/api'
-import { SectionLabel, StatusBadge } from '@/components/ui'
+import { SectionLabel } from '@/components/ui'
 import { SqlBlock } from '@/components/dimension/SqlBlock'
 import {
   useDimensionUpload,

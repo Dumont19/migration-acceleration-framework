@@ -73,9 +73,9 @@ export function useDimensionHomologate() {
     setHomologating(true)
     try {
       const form = new FormData()
-      Object.entries(spec).forEach(([k, v]) => form.append(k, JSON.stringify(v)))
-      form.set('prod_table', prodTable.trim())
-      form.set('time_travel_offset', String(timeTravelOffset))
+      form.append('spec_json', JSON.stringify(spec))
+      form.append('prod_table', prodTable.trim())
+      form.append('time_travel_offset', String(timeTravelOffset))
       const res = await dimensionApi.homologate(form)
       setResult(res)
     } catch (err: unknown) {
