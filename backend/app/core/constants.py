@@ -14,6 +14,7 @@ SCD_FL_MN1_MAP: dict[str, str] = {
     "end_date":    "DAT_FIM_VIG_RGT",
     "sys_name":    "NOM_SIS_ORI",
     "load_date":   "DAT_CAR_RGT",
+    "job_name":    "NOM_JOB_CRG",
 }
 
 #: Colunas SCD2 no padrão fl_mn=0 (legado)
@@ -23,6 +24,7 @@ SCD_FL_MN0_MAP: dict[str, str] = {
     "end_date":    "END_DATE",
     "sys_name":    "SRC_SYS_NAME",
     "load_date":   "D_TIMESTAMP",
+    "job_name":    "NOM_JOB_CRG",
 }
 
 #: Conjunto de colunas fl_mn=1 — usado para detecção automática no DSX
@@ -31,9 +33,10 @@ SCD_FL_MN1_COLS: frozenset[str] = frozenset(SCD_FL_MN1_MAP.values())
 #: Conjunto de colunas fl_mn=0 — usado para detecção automática no DSX
 SCD_FL_MN0_COLS: frozenset[str] = frozenset(SCD_FL_MN0_MAP.values())
 
-#: Todas as colunas SCD2 de controle (ambos fl_mn) — para exclusão de QTD_DIF_CAM
+#: Todas as colunas SCD2 de controle (ambos fl_mn) — para exclusão de FIELDS_DIFF
 SCD2_ALL_CONTROL_COLS: frozenset[str] = frozenset(
     set(SCD_FL_MN1_MAP.values()) | set(SCD_FL_MN0_MAP.values())
+    | {"DAT_CRG_RGT", "DAT_PRI_VIG_RGT"}
 )
 
 # ── Snowflake — schemas e objetos de controle ─────────────────────────────────

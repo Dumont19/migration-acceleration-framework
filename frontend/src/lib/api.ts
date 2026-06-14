@@ -365,7 +365,8 @@ export interface DimensionGenerateResult {
 export interface DimensionHomologateResult {
   dev_table: string
   prod_table: string
-  time_travel_offset: number
+  data_teste: string
+  offset_hours: number
   queries: Record<string, string>
 }
 

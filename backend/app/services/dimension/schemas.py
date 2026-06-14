@@ -151,6 +151,8 @@ class DimensionSpec(BaseModel):
     oracle_schema: str = PROD_ORACLE_SCHEMA
     prod_sf_schema: str = PROD_SF_SCHEMA
 
+    source_table: str = ""
+
     oracle_columns: list[OracleColumnInfo] = Field(default_factory=list)
     oracle_constraints: list[OracleConstraintInfo] = Field(default_factory=list)
 

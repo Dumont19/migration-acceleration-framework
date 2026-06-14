@@ -163,15 +163,13 @@ async def generate_dimension_sql(
 @router.post("/homologate", response_model=dict, status_code=status.HTTP_200_OK)
 async def generate_homologation_queries(
     spec_json: str = Form(..., description="DimensionSpec serializado como JSON"),
-    prod_table: str = Form(..., description="Nome completo da tabela PROD (ex: DWADM.D_TABELA)"),
-    time_travel_offset: int = Form(
-        0,
-        description="Offset Time Travel em segundos (negativo, ex: -3600 para 1h atrás). 0 = sem Time Travel.",
-    ),
+    data_teste: str = Form(..., description="Data de referência para Time Travel (YYYY-MM-DD)"),
+    bsk_id: str = Form("", description="Valor da business key para query 07 (UNION ALL)"),
+    offset_hours: int = Form(23, description="Horas de offset sobre data_teste - 1 (default 23)"),
 ):
     """
-    Gera queries MINUS, COUNT por data e divergência de campos para
-    homologação DEV vs PROD da tabela de dimensão.
+    Gera 7 queries de homologação DEV vs PROD:
+    snapshot PROD, COUNT totais, COUNT por data, MINUS e UNION ALL por BSK_ID.
     """
     try:
         spec = DimensionSpec.model_validate(json.loads(spec_json))
@@ -180,29 +178,25 @@ async def generate_homologation_queries(
             status_code=422, detail=f"DimensionSpec inválido: {exc}"
         ) from exc
 
-    if time_travel_offset > 0:
-        raise HTTPException(
-            status_code=422,
-            detail="time_travel_offset deve ser 0 ou negativo (ex: -3600).",
-        )
-
     homologator = DimensionHomologator(
         spec=spec,
-        prod_table=prod_table,
-        time_travel_offset=time_travel_offset,
+        data_teste=data_teste,
+        bsk_id=bsk_id,
+        offset_hours=offset_hours,
     )
     queries = homologator.generate()
 
     logger.info(
         "Homologation queries generated",
         job=spec.job_name,
-        prod_table=prod_table,
-        time_travel=time_travel_offset,
+        data_teste=data_teste,
+        bsk_id=bsk_id,
     )
     return {
         "dev_table": f"{spec.schema}.{spec.target_table}",
-        "prod_table": prod_table,
-        "time_travel_offset": time_travel_offset,
+        "prod_table": f"{spec.prod_sf_schema}.{spec.target_table}",
+        "data_teste": data_teste,
+        "offset_hours": offset_hours,
         "queries": queries,
     }
 

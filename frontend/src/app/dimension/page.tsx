@@ -205,6 +205,16 @@ function GenerateTab({
 
 // ── Tab: Homologate ───────────────────────────────────────────────────────────
 
+const SQL_LABELS: Record<string, string> = {
+  '01_snapshot_prod':       '01 — Snapshot PROD via Time Travel',
+  '02_count_dev_total':     '02 — COUNT DEV total',
+  '03_count_prod_total':    '03 — COUNT PROD total',
+  '04_count_dev_por_data':  '04 — COUNT DEV por data',
+  '05_count_prod_por_data': '05 — COUNT PROD por data',
+  '06_minus_dev_prod':      '06 — MINUS DEV menos PROD',
+  '07_union_bsk_id':        '07 — UNION ALL por BSK_ID',
+}
+
 function HomologateTab({
   spec,
   homo,
@@ -225,13 +235,19 @@ function HomologateTab({
       <div className="card">
         <SectionLabel>homologation_config</SectionLabel>
         <div className="form-group" style={{ marginBottom: 16 }}>
-          <label className="form-label">tabela PROD (schema.tabela)</label>
-          <input className="form-input" placeholder="DWADM.D_ORDEM_SRV_TECNICA" value={homo.prodTable} onChange={e => homo.setProdTable(e.target.value)} />
+          <label className="form-label">data_teste</label>
+          <input className="form-input" type="date" value={homo.dataTeste} onChange={e => homo.setDataTeste(e.target.value)} />
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Data de referência para Time Travel no snapshot PROD.</div>
+        </div>
+        <div className="form-group" style={{ marginBottom: 16 }}>
+          <label className="form-label">bsk_id</label>
+          <input className="form-input" placeholder="ex: 12345" value={homo.bskId} onChange={e => homo.setBskId(e.target.value)} />
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Business key para query 07 (UNION ALL comparação).</div>
         </div>
         <div className="form-group" style={{ marginBottom: 20 }}>
-          <label className="form-label">Time Travel offset (segundos, ≤ 0)</label>
-          <input className="form-input" type="number" max={0} value={homo.timeTravelOffset} onChange={e => homo.setTimeTravelOffset(Number(e.target.value))} />
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Ex: -3600 = PROD de 1h atrás. 0 = sem Time Travel.</div>
+          <label className="form-label">offset_hours</label>
+          <input className="form-input" type="number" min={0} max={23} value={homo.offsetHours} onChange={e => homo.setOffsetHours(Number(e.target.value))} />
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Horas sobre data_teste - 1 (default 23 = fim do dia anterior).</div>
         </div>
         {homo.error && (
           <div style={{ color: 'var(--status-error)', fontSize: 'var(--font-size-xs)', marginBottom: 8 }}>✗ {homo.error}</div>
@@ -252,12 +268,10 @@ function HomologateTab({
               DEV: <span style={{ color: 'var(--accent)' }}>{homo.result.dev_table}</span>
               {' vs '}
               PROD: <span style={{ color: 'var(--accent)' }}>{homo.result.prod_table}</span>
-              {homo.result.time_travel_offset < 0 && (
-                <span> · AT OFFSET {homo.result.time_travel_offset}s</span>
-              )}
+              <span> · data_teste: {homo.result.data_teste} · offset: {homo.result.offset_hours}h</span>
             </div>
             {Object.entries(homo.result.queries).map(([key, sql]) => (
-              <SqlBlock key={key} label={key.replace(/_/g, ' ')} sql={sql} />
+              <SqlBlock key={key} label={SQL_LABELS[key] ?? key.replace(/_/g, ' ')} sql={sql} />
             ))}
           </div>
         )}

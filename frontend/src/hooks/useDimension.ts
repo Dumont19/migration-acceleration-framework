@@ -61,21 +61,27 @@ export function useDimensionGenerate() {
 
 /** Estado e handlers para geração de queries de homologação. */
 export function useDimensionHomologate() {
-  const [prodTable, setProdTable] = useState('')
-  const [timeTravelOffset, setTimeTravelOffset] = useState(0)
+  const [dataTeste, setDataTeste] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    return d.toISOString().slice(0, 10)
+  })
+  const [bskId, setBskId] = useState('')
+  const [offsetHours, setOffsetHours] = useState(23)
   const [homologating, setHomologating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<DimensionHomologateResult | null>(null)
 
   const handleHomologate = useCallback(async (spec: DimensionSpec) => {
-    if (!prodTable.trim()) { setError('Informe a tabela PROD'); return }
+    if (!dataTeste) { setError('Informe a data de teste'); return }
     setError(null)
     setHomologating(true)
     try {
       const form = new FormData()
       form.append('spec_json', JSON.stringify(spec))
-      form.append('prod_table', prodTable.trim())
-      form.append('time_travel_offset', String(timeTravelOffset))
+      form.append('data_teste', dataTeste)
+      form.append('bsk_id', bskId)
+      form.append('offset_hours', String(offsetHours))
       const res = await dimensionApi.homologate(form)
       setResult(res)
     } catch (err: unknown) {
@@ -83,11 +89,12 @@ export function useDimensionHomologate() {
     } finally {
       setHomologating(false)
     }
-  }, [prodTable, timeTravelOffset])
+  }, [dataTeste, bskId, offsetHours])
 
   return {
-    prodTable, setProdTable,
-    timeTravelOffset, setTimeTravelOffset,
+    dataTeste, setDataTeste,
+    bskId, setBskId,
+    offsetHours, setOffsetHours,
     homologating, error, result,
     handleHomologate,
   }
